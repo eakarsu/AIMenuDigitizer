@@ -13,7 +13,14 @@ import {
   Sparkles,
   Heart,
   Settings,
-  Shield
+  Shield,
+  BarChart2,
+  Filter,
+  Leaf,
+  MapPin,
+  Users,
+  Calculator,
+  Plug
 } from 'lucide-react';
 
 export default function Layout() {
@@ -29,6 +36,14 @@ export default function Layout() {
     { name: 'Recommend', href: '/dish-recommender', icon: Sparkles },
     { name: 'Translate', href: '/translations', icon: Languages },
     { name: 'AI History', href: '/ai-analysis', icon: Brain },
+    { name: 'Menu Engineer', href: '/menu-engineer', icon: BarChart2 },
+    { name: 'Dietary Filters', href: '/dietary-filters', icon: Filter },
+    { name: 'Seasonal', href: '/seasonal-rotation', icon: Leaf },
+    { name: 'Locations', href: '/locations', icon: MapPin },
+    { name: 'Staff', href: '/staff', icon: Users },
+    { name: 'Costs', href: '/ingredient-costs', icon: DollarSign },
+    { name: 'AI Cost Analysis', href: '/ai-cost-analysis', icon: Calculator },
+    { name: 'Integrations', href: '/integrations', icon: Plug },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
 

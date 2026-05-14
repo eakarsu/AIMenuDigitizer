@@ -15,3 +15,12 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Strict limiter for heavy / expensive AI endpoints: 5 requests per hour
+export const heavyAiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Rate limit exceeded for this endpoint. Max 5 requests per hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

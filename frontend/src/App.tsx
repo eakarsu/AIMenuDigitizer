@@ -15,6 +15,15 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
 import ProfileSettings from './pages/ProfileSettings';
+import PublicMenuPage from './pages/PublicMenuPage';
+import MenuEngineerScorePage from './pages/MenuEngineerScorePage';
+import DietaryFilterPage from './pages/DietaryFilterPage';
+import SeasonalRotationPage from './pages/SeasonalRotationPage';
+import LocationsPage from './pages/LocationsPage';
+import StaffPage from './pages/StaffPage';
+import IngredientCostsPage from './pages/IngredientCostsPage';
+import IntegrationsPage from './pages/IntegrationsPage';
+import AICostAnalysisPage from './pages/AICostAnalysisPage';
 import Layout from './components/Layout';
 import ToastContainer from './components/ToastContainer';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -49,6 +58,8 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/verify-email/:token" element={<VerifyEmail />} />
+              {/* Public QR menu page — no authentication required */}
+              <Route path="/menu/:id/view" element={<PublicMenuPage />} />
               <Route
                 path="/"
                 element={
@@ -67,6 +78,14 @@ function App() {
                 <Route path="dish-recommender" element={<DishRecommenderPage />} />
                 <Route path="nutrition-healthcare" element={<NutritionHealthcarePage />} />
                 <Route path="settings" element={<ProfileSettings />} />
+                <Route path="menu-engineer" element={<MenuEngineerScorePage />} />
+                <Route path="dietary-filters" element={<DietaryFilterPage />} />
+                <Route path="seasonal-rotation" element={<SeasonalRotationPage />} />
+                <Route path="locations" element={<LocationsPage />} />
+                <Route path="staff" element={<StaffPage />} />
+                <Route path="ingredient-costs" element={<IngredientCostsPage />} />
+                <Route path="integrations" element={<IntegrationsPage />} />
+                <Route path="ai-cost-analysis" element={<AICostAnalysisPage />} />
               </Route>
             </Routes>
           </ErrorBoundary>
