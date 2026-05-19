@@ -3,11 +3,22 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  esbuild: {
+    loader: 'tsx',
+    include: [/src\/.*\.[jt]sx?$/],
+    exclude: [],
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      loader: { '.js': 'jsx' },
+    },
+  },
   server: {
-    port: 3000,
+    port: 3090,
+    strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3091',
         changeOrigin: true
       }
     }

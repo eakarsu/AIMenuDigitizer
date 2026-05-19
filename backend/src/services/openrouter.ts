@@ -24,94 +24,146 @@ export interface AIAnalysisResult {
   error?: string;
 }
 
+const RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1000;
+const REQUEST_TIMEOUT_MS = 30000;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 class OpenRouterService {
   private apiKey: string;
   private model: string;
+  private visionModel: string;
   private baseUrl: string = 'https://openrouter.ai/api/v1/chat/completions';
 
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY || '';
-    this.model = process.env.OPENROUTER_MODEL || 'anthropic/claude-haiku-4.5';
+    this.model = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
+    // Vision model must support image_url content blocks
+    this.visionModel = process.env.OPENROUTER_VISION_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
   }
 
-  private async makeRequest(messages: { role: string; content: string }[]): Promise<OpenRouterResponse> {
-    const response = await fetch(this.baseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'AI Menu Digitizer'
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages,
-        temperature: 0.3,
-        max_tokens: 10000
-      })
-    });
+  private async makeRequest(messages: { role: string; content: any }[], modelOverride?: string): Promise<OpenRouterResponse> {
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+    for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+        const response = await fetch(this.baseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'AI Menu Digitizer'
+          },
+          body: JSON.stringify({
+            model: modelOverride || this.model,
+            messages,
+            temperature: 0.3,
+            max_tokens: 10000
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          // Only retry on 5xx errors
+          if (response.status >= 500 && attempt < RETRY_ATTEMPTS) {
+            lastError = new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+            await sleep(RETRY_DELAY_MS * attempt);
+            continue;
+          }
+          throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        }
+
+        return response.json() as Promise<OpenRouterResponse>;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          lastError = new Error('Request timed out after 30 seconds');
+        } else {
+          lastError = err;
+        }
+        if (attempt < RETRY_ATTEMPTS) {
+          await sleep(RETRY_DELAY_MS * attempt);
+        }
+      }
     }
 
-    return response.json() as Promise<OpenRouterResponse>;
+    throw lastError || new Error('Request failed after retries');
   }
 
-  private parseJsonResponse(content: string): any {
+  private parseJsonResponse(content: string, requiredFields?: string[]): any {
+    let parsed: any;
     try {
-      return JSON.parse(content);
+      parsed = JSON.parse(content);
     } catch {
       // Try to extract JSON from response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+          throw new Error('Could not parse JSON from response');
+        }
+      } else {
+        throw new Error('Could not parse JSON from response');
       }
-      throw new Error('Could not parse JSON from response');
     }
+
+    // Validate required fields if provided
+    if (requiredFields && requiredFields.length > 0) {
+      const missing = requiredFields.filter(f => !(f in parsed));
+      if (missing.length > 0) {
+        throw new Error(`AI response missing required fields: ${missing.join(', ')}`);
+      }
+    }
+
+    return parsed;
   }
 
-  async analyzeMenuImage(imageBase64: string, menuId?: number): Promise<AIAnalysisResult> {
+  async analyzeMenuImage(imageBase64: string, menuId?: number, mimeType: string = 'image/jpeg'): Promise<AIAnalysisResult> {
     try {
+      // Strip any data URL prefix the client may have included — use the full base64 payload
+      const base64Data = imageBase64.replace(/^data:[^;]+;base64,/, '');
+
+      // Send a proper vision message with Anthropic-style content blocks
       const messages = [
         {
-          role: 'system',
-          content: `You are a menu analysis expert. Analyze the provided menu image and extract structured data.
-Return a JSON object with the following structure:
-{
-  "restaurant_name": "string or null",
-  "items": [
-    {
-      "name": "string",
-      "description": "string",
-      "price": number or null,
-      "category": "string",
-      "is_vegetarian": boolean,
-      "is_vegan": boolean,
-      "is_gluten_free": boolean,
-      "spice_level": 0-4
-    }
-  ]
-}
-Only respond with valid JSON, no additional text.`
-        },
-        {
           role: 'user',
-          content: `Analyze this menu image and extract all menu items with their details:\n\n[Image data: ${imageBase64.substring(0, 100)}...]`
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType || 'image/jpeg',
+                data: base64Data
+              }
+            },
+            {
+              type: 'text',
+              text: 'Extract all menu items from this image. Return JSON: { menu_name, items: [{name, description, price, category, dietary_flags: {vegetarian, vegan, gluten_free}}] }'
+            }
+          ]
         }
       ];
 
-      const response = await this.makeRequest(messages);
+      const response = await this.makeRequest(messages, this.visionModel);
       const content = response.choices[0]?.message?.content || '';
-      const data = this.parseJsonResponse(content);
+      const data = this.parseJsonResponse(content, ['items']);
 
       // Log to database
       if (menuId) {
         await pool.query(
           `INSERT INTO ai_analysis (menu_id, analysis_type, input_data, output_data, model_used, tokens_used)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [menuId, 'menu_digitization', 'image', data, this.model, response.usage?.total_tokens || 0]
+          [menuId, 'menu_digitization', 'image', data, this.visionModel, response.usage?.total_tokens || 0]
         );
       }
 
@@ -758,6 +810,288 @@ ${healthConditions ? `Patient's Health Conditions: ${healthConditions}` : ''}`
         data: null,
         error: error.message
       };
+    }
+  }
+
+  // PDF Menu Analysis — analyzes extracted text from a PDF
+  async analyzeMenuPdf(pdfText: string, menuId?: number): Promise<AIAnalysisResult> {
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: `You are a menu analysis expert. Parse the provided menu text extracted from a PDF and extract structured data.
+Return a JSON object with the following structure:
+{
+  "restaurant_name": "string or null",
+  "items": [
+    {
+      "name": "string",
+      "description": "string",
+      "price": number or null,
+      "category": "string (e.g., Appetizer, Main Course, Dessert, Beverage)",
+      "is_vegetarian": boolean,
+      "is_vegan": boolean,
+      "is_gluten_free": boolean,
+      "spice_level": 0-4
+    }
+  ],
+  "categories_found": ["string array"],
+  "currency": "string or null"
+}
+Only respond with valid JSON, no additional text.`
+        },
+        {
+          role: 'user',
+          content: `Parse this PDF menu text and extract all items:\n\n${pdfText}`
+        }
+      ];
+
+      const response = await this.makeRequest(messages);
+      const content = response.choices[0]?.message?.content || '';
+      const data = this.parseJsonResponse(content, ['items']);
+
+      if (menuId) {
+        await pool.query(
+          `INSERT INTO ai_analysis (menu_id, analysis_type, input_data, output_data, model_used, tokens_used)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [menuId, 'pdf_parsing', pdfText.substring(0, 500), data, this.model, response.usage?.total_tokens || 0]
+        );
+      }
+
+      return {
+        success: true,
+        data,
+        rawResponse: content,
+        tokensUsed: response.usage?.total_tokens
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        data: null,
+        error: error.message
+      };
+    }
+  }
+
+  // Menu Engineering Score — classify items as Star/Plowhorse/Puzzle/Dog
+  async menuEngineerScore(menuId: number): Promise<AIAnalysisResult> {
+    try {
+      const itemsResult = await pool.query(
+        `SELECT id, name, description, price, category FROM menu_items WHERE menu_id = $1`,
+        [menuId]
+      );
+
+      if (itemsResult.rows.length === 0) {
+        return { success: false, data: null, error: 'No menu items found for this menu' };
+      }
+
+      const itemsList = itemsResult.rows.map(item =>
+        `{ id: ${item.id}, name: "${item.name}", category: "${item.category || 'General'}", price: ${item.price || 0} }`
+      ).join('\n');
+
+      const messages = [
+        {
+          role: 'system',
+          content: `You are a restaurant menu engineering expert. Analyze menu items for profitability and popularity potential.
+Classify each item as Star/Plowhorse/Puzzle/Dog based on menu engineering principles.
+Return JSON:
+{
+  "items": [
+    {
+      "id": number,
+      "name": "string",
+      "classification": "Star" | "Plowhorse" | "Puzzle" | "Dog",
+      "reasoning": "string",
+      "recommended_action": "string"
+    }
+  ],
+  "overall_menu_health": "string",
+  "top_recommendations": ["string"]
+}
+Only respond with valid JSON, no additional text.`
+        },
+        {
+          role: 'user',
+          content: `Analyze these menu items for profitability and popularity potential:\n${itemsList}`
+        }
+      ];
+
+      const response = await this.makeRequest(messages);
+      const content = response.choices[0]?.message?.content || '';
+      const data = this.parseJsonResponse(content, ['items', 'overall_menu_health', 'top_recommendations']);
+
+      // Optionally store results in price_suggestions table
+      if (data.items && Array.isArray(data.items)) {
+        for (const scored of data.items) {
+          try {
+            const originalItem = itemsResult.rows.find((r: any) => r.id === scored.id);
+            if (originalItem) {
+              await pool.query(
+                `INSERT INTO price_suggestions (menu_item_id, current_price, suggested_price, min_price, max_price, confidence, reasoning, market_analysis, profit_margin, demand_level)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (menu_item_id) DO UPDATE SET
+                   reasoning = EXCLUDED.reasoning,
+                   market_analysis = EXCLUDED.market_analysis,
+                   updated_at = CURRENT_TIMESTAMP`,
+                [
+                  scored.id,
+                  originalItem.price || 0,
+                  originalItem.price || 0,
+                  originalItem.price || 0,
+                  originalItem.price || 0,
+                  80,
+                  `[${scored.classification}] ${scored.reasoning}`,
+                  JSON.stringify({ classification: scored.classification, recommended_action: scored.recommended_action }),
+                  0,
+                  scored.classification === 'Star' || scored.classification === 'Plowhorse' ? 'High' : 'Low'
+                ]
+              );
+            }
+          } catch {
+            // Non-fatal: continue even if storing individual item fails
+          }
+        }
+      }
+
+      await pool.query(
+        `INSERT INTO ai_analysis (menu_id, analysis_type, input_data, output_data, model_used, tokens_used)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [menuId, 'menu_engineering', `${itemsResult.rows.length} items`, data, this.model, response.usage?.total_tokens || 0]
+      );
+
+      return {
+        success: true,
+        data,
+        rawResponse: content,
+        tokensUsed: response.usage?.total_tokens
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        data: null,
+        error: error.message
+      };
+    }
+  }
+
+  // Dietary filter recommendations — surface items matching strict diet filters,
+  // and suggest substitutions / new dish ideas where coverage is thin.
+  async dietaryFilterRecommendations(menuId: number, filters: string[], notes: string = ''): Promise<AIAnalysisResult> {
+    try {
+      const itemsResult = await pool.query(
+        `SELECT id, name, description, price, category, is_vegetarian, is_vegan, is_gluten_free
+         FROM menu_items WHERE menu_id = $1`,
+        [menuId]
+      );
+
+      if (itemsResult.rows.length === 0) {
+        return { success: false, data: null, error: 'No menu items found for this menu' };
+      }
+
+      const itemsList = itemsResult.rows.map(item =>
+        `- id=${item.id} | ${item.name} ($${item.price}) [${item.category || 'General'}] vegetarian=${!!item.is_vegetarian} vegan=${!!item.is_vegan} gluten_free=${!!item.is_gluten_free} :: ${item.description || ''}`
+      ).join('\n');
+
+      const filterList = (filters && filters.length ? filters : ['vegan', 'gluten_free', 'vegetarian']).join(', ');
+
+      const messages = [
+        {
+          role: 'system',
+          content: `You are a dietary-aware restaurant consultant. Given menu items and a list of dietary filters, classify what's already compliant, what could be made compliant with substitutions, and where the menu has gaps.
+Return JSON:
+{
+  "filters": ["string"],
+  "compliant_items": [{ "id": number, "name": "string", "filter": "string", "confidence": "low|medium|high" }],
+  "convertible_items": [{ "id": number, "name": "string", "filter": "string", "substitution": "string", "rationale": "string" }],
+  "coverage_gaps": [{ "filter": "string", "gap_description": "string", "suggested_new_dishes": ["string"] }],
+  "summary": "string"
+}
+Only respond with valid JSON, no additional text.`
+        },
+        {
+          role: 'user',
+          content: `Filters: ${filterList}\nNotes: ${notes || '(none)'}\n\nMenu items:\n${itemsList}`
+        }
+      ];
+
+      const response = await this.makeRequest(messages);
+      const content = response.choices[0]?.message?.content || '';
+      const data = this.parseJsonResponse(content);
+
+      await pool.query(
+        `INSERT INTO ai_analysis (menu_id, analysis_type, input_data, output_data, model_used, tokens_used)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [menuId, 'dietary_filter_recommendations', `Filters: ${filterList}`, data, this.model, response.usage?.total_tokens || 0]
+      );
+
+      return {
+        success: true,
+        data,
+        rawResponse: content,
+        tokensUsed: response.usage?.total_tokens
+      };
+    } catch (error: any) {
+      return { success: false, data: null, error: error.message };
+    }
+  }
+
+  // Seasonal rotation — propose a refresh of the menu for a specific season
+  // (or month), keeping cost/operational constraints in mind.
+  async menuSeasonalRotation(menuId: number, season: string, region: string = ''): Promise<AIAnalysisResult> {
+    try {
+      const itemsResult = await pool.query(
+        `SELECT id, name, description, price, category FROM menu_items WHERE menu_id = $1`,
+        [menuId]
+      );
+
+      if (itemsResult.rows.length === 0) {
+        return { success: false, data: null, error: 'No menu items found for this menu' };
+      }
+
+      const itemsList = itemsResult.rows.map(item =>
+        `- id=${item.id} | ${item.name} ($${item.price}) [${item.category || 'General'}] :: ${item.description || ''}`
+      ).join('\n');
+
+      const messages = [
+        {
+          role: 'system',
+          content: `You are a seasonal menu strategist. Given a current menu, propose a seasonal rotation for the requested season: which items to keep, which to retire, which to add. Consider regional ingredient availability and customer expectations.
+Return JSON:
+{
+  "season": "string",
+  "region": "string",
+  "keep": [{ "id": number, "name": "string", "reason": "string" }],
+  "retire": [{ "id": number, "name": "string", "reason": "string" }],
+  "add": [{ "name": "string", "category": "string", "key_ingredients": ["string"], "estimated_price": number, "rationale": "string" }],
+  "menu_balance_notes": "string",
+  "summary": "string"
+}
+Only respond with valid JSON, no additional text.`
+        },
+        {
+          role: 'user',
+          content: `Season: ${season}\nRegion: ${region || '(unspecified)'}\n\nCurrent menu:\n${itemsList}`
+        }
+      ];
+
+      const response = await this.makeRequest(messages);
+      const content = response.choices[0]?.message?.content || '';
+      const data = this.parseJsonResponse(content);
+
+      await pool.query(
+        `INSERT INTO ai_analysis (menu_id, analysis_type, input_data, output_data, model_used, tokens_used)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [menuId, 'seasonal_rotation', `Season: ${season}, Region: ${region}`, data, this.model, response.usage?.total_tokens || 0]
+      );
+
+      return {
+        success: true,
+        data,
+        rawResponse: content,
+        tokensUsed: response.usage?.total_tokens
+      };
+    } catch (error: any) {
+      return { success: false, data: null, error: error.message };
     }
   }
 }

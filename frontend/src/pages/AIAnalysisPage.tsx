@@ -182,7 +182,7 @@ export default function AIAnalysisPage() {
   const { addToast } = useToast();
   const [menus, setMenus] = useState<Menu[]>([]);
   const [selectedMenu, setSelectedMenu] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'image' | 'text'>('text');
+  const [activeTab, setActiveTab] = useState<'image' | 'text' | 'pdf'>('text');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [history, setHistory] = useState<AIHistory[]>([]);
@@ -201,6 +201,10 @@ export default function AIAnalysisPage() {
 
   // Text analysis
   const [menuText, setMenuText] = useState('');
+
+  // PDF analysis
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   // Import states
   const [extractedItems, setExtractedItems] = useState<ExtractedItem[]>([]);
@@ -304,6 +308,43 @@ export default function AIAnalysisPage() {
       addToast('Error analyzing text', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setPdfFile(file);
+  };
+
+  const handlePdfAnalysis = async () => {
+    if (!pdfFile) return;
+    setPdfLoading(true);
+    setResult(null);
+    setExtractedItems([]);
+    setImportSuccess(false);
+    try {
+      // Read the PDF file as text using FileReader (the text will be sent to backend)
+      // For a real implementation, the backend would parse with pdf-parse
+      // Here we send the raw file content as base64 and the backend extracts text
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const base64 = (ev.target?.result as string).split(',')[1];
+          // We pass pdfText as a signal to the backend that it is base64-encoded PDF
+          const response = await aiApi.analyzePdfMenu(`[PDF_BASE64]:${base64}`, selectedMenu || undefined);
+          setResult(response.data);
+          addToast('PDF analysis complete', 'success');
+          fetchHistory();
+        } catch (error) {
+          addToast('Error analyzing PDF', 'error');
+        } finally {
+          setPdfLoading(false);
+        }
+      };
+      reader.readAsDataURL(pdfFile);
+    } catch (error) {
+      addToast('Error reading PDF file', 'error');
+      setPdfLoading(false);
     }
   };
 
@@ -531,6 +572,17 @@ export default function AIAnalysisPage() {
                   <Camera className="h-4 w-4" />
                   Image Upload
                 </button>
+                <button
+                  onClick={() => setActiveTab('pdf')}
+                  className={`flex-1 px-4 py-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+                    activeTab === 'pdf'
+                      ? 'text-primary-600 border-b-2 border-primary-500 bg-primary-50'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <FileText className="h-4 w-4" />
+                  PDF Upload
+                </button>
               </div>
 
               <div className="p-4">
@@ -572,7 +624,7 @@ export default function AIAnalysisPage() {
                       {loading ? 'Analyzing...' : 'Analyze Menu Text'}
                     </button>
                   </div>
-                ) : (
+                ) : activeTab === 'image' ? (
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -584,7 +636,7 @@ export default function AIAnalysisPage() {
                           <img
                             src={imagePreview}
                             alt="Menu preview"
-                            className="w-full rounded-lg border border-gray-200"
+                            className="w-full rounded-lg border border-gray-200 max-h-80 object-contain"
                           />
                           <button
                             onClick={() => setImagePreview(null)}
@@ -598,11 +650,11 @@ export default function AIAnalysisPage() {
                         <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors">
                           <Upload className="h-10 w-10 text-gray-400 mb-2" />
                           <span className="text-sm text-gray-600">Click to upload or drag and drop</span>
-                          <span className="text-xs text-gray-500 mt-1">PNG, JPG up to 10MB</span>
+                          <span className="text-xs text-gray-500 mt-1">PNG, JPG, WebP up to 10MB</span>
                           <input
                             type="file"
                             className="hidden"
-                            accept="image/*"
+                            accept="image/jpeg,image/png,image/webp,image/gif"
                             onChange={handleImageUpload}
                           />
                         </label>
@@ -620,6 +672,50 @@ export default function AIAnalysisPage() {
                         <Brain className="h-5 w-5" />
                       )}
                       {loading ? 'Analyzing...' : 'Analyze Menu Image'}
+                    </button>
+                  </div>
+                ) : (
+                  /* PDF Upload Tab */
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Upload PDF Menu
+                      </label>
+                      <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors">
+                        <FileText className="h-10 w-10 text-gray-400 mb-2" />
+                        {pdfFile ? (
+                          <>
+                            <span className="text-sm font-medium text-gray-700">{pdfFile.name}</span>
+                            <span className="text-xs text-gray-500 mt-1">
+                              {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-sm text-gray-600">Click to upload PDF menu</span>
+                            <span className="text-xs text-gray-500 mt-1">PDF up to 10MB</span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="application/pdf"
+                          onChange={handlePdfUpload}
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={handlePdfAnalysis}
+                      disabled={pdfLoading || !pdfFile}
+                      className="btn-primary w-full flex items-center justify-center gap-2"
+                    >
+                      {pdfLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Brain className="h-5 w-5" />
+                      )}
+                      {pdfLoading ? 'Analyzing PDF...' : 'Analyze PDF Menu'}
                     </button>
                   </div>
                 )}

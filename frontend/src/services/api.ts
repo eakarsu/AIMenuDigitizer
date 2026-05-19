@@ -114,6 +114,8 @@ export const aiApi = {
     api.post('/api/ai/analyze-image', { imageBase64, menuId }),
   analyzeText: (menuText: string, menuId?: number) =>
     api.post('/api/ai/analyze-text', { menuText, menuId }),
+  analyzePdfMenu: (pdfText: string, menuId?: number) =>
+    api.post('/api/ai/analyze-pdf-menu', { pdfText, menuId }),
   detectAllergens: (itemName: string, description: string, menuItemId?: number) =>
     api.post('/api/ai/detect-allergens', { itemName, description, menuItemId }),
   estimateCalories: (itemName: string, description: string, menuItemId?: number) =>
@@ -131,6 +133,40 @@ export const aiApi = {
   analyzeNutritionHealthcare: (itemName: string, description: string, healthConditions: string, menuItemId?: number) =>
     api.post('/api/ai/nutrition-healthcare', { itemName, description, healthConditions, menuItemId }),
   getHistory: (type?: string) => api.get('/api/ai/history', { params: { type } }),
+  menuEngineerScore: (menuId: number) => api.post(`/api/ai/menu-engineer-score/${menuId}`),
+  dietaryFilterRecommendations: (menuId: number, filters: string[], notes?: string) =>
+    api.post('/api/ai/dietary-filter-recommendations', { menuId, filters, notes }),
+  menuSeasonalRotation: (menuId: number, season: string, region?: string) =>
+    api.post('/api/ai/menu-seasonal-rotation', { menuId, season, region }),
+  costAnalysis: (menuId: number) => api.post('/api/ai/cost-analysis', { menuId }),
+  getJobStatus: (jobId: string) => api.get(`/api/ai/jobs/${jobId}`),
+};
+
+// Apply pass 5 — additive APIs
+export const locationsApi = {
+  list: () => api.get('/api/locations'),
+  create: (data: { name: string; address?: string; city?: string; country?: string; timezone?: string }) =>
+    api.post('/api/locations', data),
+  remove: (id: number) => api.delete(`/api/locations/${id}`),
+};
+export const staffApi = {
+  roles: () => api.get('/api/staff/roles'),
+  assignments: () => api.get('/api/staff/assignments'),
+  assign: (data: { user_id: number; location_id?: number; role: string }) =>
+    api.post('/api/staff/assignments', data),
+  unassign: (id: number) => api.delete(`/api/staff/assignments/${id}`),
+};
+export const ingredientsApi = {
+  list: () => api.get('/api/ingredient-costs'),
+  create: (data: { name: string; unit: string; cost_per_unit: number; vendor?: string }) =>
+    api.post('/api/ingredient-costs', data),
+  link: (data: { menu_item_id: number; ingredient_id: number; quantity_per_serving: number }) =>
+    api.post('/api/ingredient-costs/menu-item-link', data),
+  analysis: (menuId: number) => api.get(`/api/ingredient-costs/analysis/${menuId}`),
+};
+export const integrationsApi = {
+  status: () => api.get('/api/integrations/status'),
+  syncMenu: (provider: string) => api.post(`/api/integrations/${provider}/sync-menu`),
 };
 
 export const authApi = {
