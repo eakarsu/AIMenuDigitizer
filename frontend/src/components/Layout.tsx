@@ -20,7 +20,8 @@ import {
   MapPin,
   Users,
   Calculator,
-  Plug
+  Plug,
+  PieChart
 } from 'lucide-react';
 
 export default function Layout() {
@@ -44,6 +45,7 @@ export default function Layout() {
     { name: 'Costs', href: '/ingredient-costs', icon: DollarSign },
     { name: 'AI Cost Analysis', href: '/ai-cost-analysis', icon: Calculator },
     { name: 'Integrations', href: '/integrations', icon: Plug },
+    { name: 'Menu Analytics', href: '/custom-views', icon: PieChart },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
 

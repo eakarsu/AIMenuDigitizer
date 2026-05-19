@@ -86,6 +86,15 @@ app.listen(PORT, () => {
 
 export default app;
 
+// === Custom Views (bespoke menu analytics) ===
+try {
+  const customViewsRouter = require('./routes/customViews');
+  (app as any).use('/api/custom-views', customViewsRouter.default || customViewsRouter);
+  console.log('Mounted /api/custom-views');
+} catch (e: any) {
+  console.error('custom-views mount fail:', e.message);
+}
+
 // === BATCH 05 AUTO-MOUNT (custom feature suggestions) ===
 app.use('/api/vision-menu-intel', visionMenuIntelRouter);
 app.use('/api/menu-optimization-agent', menuOptimizationAgentRouter);
