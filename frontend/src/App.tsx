@@ -24,11 +24,15 @@ import StaffPage from './pages/StaffPage';
 import IngredientCostsPage from './pages/IngredientCostsPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import AICostAnalysisPage from './pages/AICostAnalysisPage';
+import PlateMarginRepricePage from './pages/PlateMarginRepricePage';
 // @ts-ignore — JS module
 import CustomViewsPage from './pages/CustomViewsPage';
 import Layout from './components/Layout';
 import ToastContainer from './components/ToastContainer';
 import ErrorBoundary from './components/ErrorBoundary';
+
+import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
+import CodexOperationsFeature from './pages/CodexOperationsFeature';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -56,6 +60,9 @@ function App() {
           <ToastContainer />
           <ErrorBoundary>
             <Routes>
+        <Route path="/codex/custom-viz" element={<ProtectedRoute><CodexCustomVizFeature /></ProtectedRoute>} />
+        <Route path="/codex/operations" element={<ProtectedRoute><CodexOperationsFeature /></ProtectedRoute>} />
+
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
@@ -88,6 +95,7 @@ function App() {
                 <Route path="ingredient-costs" element={<IngredientCostsPage />} />
                 <Route path="integrations" element={<IntegrationsPage />} />
                 <Route path="ai-cost-analysis" element={<AICostAnalysisPage />} />
+                <Route path="plate-margin-reprice" element={<PlateMarginRepricePage />} />
                 <Route path="custom-views" element={<CustomViewsPage />} />
               </Route>
             </Routes>

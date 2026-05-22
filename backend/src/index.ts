@@ -21,6 +21,7 @@ import staffRoutes from './routes/staff';
 import ingredientCostsRoutes from './routes/ingredientCosts';
 import aiCostAnalysisRoutes from './routes/aiCostAnalysis';
 import integrationsRoutes from './routes/integrations';
+import plateMarginRepriceRoutes from './routes/plateMarginReprice';
 
 // === BATCH 05 AUTO-MOUNT imports ===
 import visionMenuIntelRouter from './routes/vision-menu-intel';
@@ -64,6 +65,7 @@ app.use('/api/staff', staffRoutes);
 app.use('/api/ingredient-costs', ingredientCostsRoutes);
 app.use('/api/ai', aiCostAnalysisRoutes);
 app.use('/api/integrations', integrationsRoutes);
+app.use('/api/plate-margin-reprice', plateMarginRepriceRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
