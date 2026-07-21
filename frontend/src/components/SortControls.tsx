@@ -1,4 +1,4 @@
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowUp, ArrowDown } from 'lucide-react';
 
 interface SortOption {
   label: string;

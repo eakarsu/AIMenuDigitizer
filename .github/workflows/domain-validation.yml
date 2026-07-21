@@ -1,0 +1,13 @@
+name: domain-validation
+on: [push, pull_request]
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: node --test backend/tests/*.test.cjs
+      - run: bash -n start.sh scripts/migrate.sh
+      - run: cd backend && npm ci && npm run build
+      - run: cd frontend && npm ci && npm run build

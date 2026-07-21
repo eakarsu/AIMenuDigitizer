@@ -3,16 +3,24 @@ import bcrypt from 'bcryptjs';
 
 async function seed() {
   try {
+    if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DEMO_SEED !== 'true') {
+      throw new Error('Demo seeding requires non-production NODE_ENV and ALLOW_DEMO_SEED=true');
+    }
+    const demoEmail = (process.env.SEED_ADMIN_EMAIL || '').trim().toLowerCase();
+    const demoPassword = process.env.SEED_DEMO_PASSWORD || '';
+    if (!demoEmail || demoPassword.length < 12) {
+      throw new Error('SEED_ADMIN_EMAIL and a 12+ character SEED_DEMO_PASSWORD are required');
+    }
     console.log('Seeding database with sample data...');
 
     // Clear existing data
     await pool.query('TRUNCATE users, menus, menu_items, allergens, nutrition, translations, ai_analysis, price_suggestions, dish_recommendations, token_blacklist RESTART IDENTITY CASCADE');
 
     // Create demo user (admin, email verified)
-    const hashedPassword = await bcrypt.hash('demo123456', 10);
+    const hashedPassword = await bcrypt.hash(demoPassword, 12);
     const userResult = await pool.query(
       `INSERT INTO users (email, password, name, role, email_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      ['demo@menudigitizer.com', hashedPassword, 'Demo User', 'admin', true]
+      [demoEmail, hashedPassword, 'Demo User', 'admin', true]
     );
     const userId = userResult.rows[0].id;
 
@@ -36,7 +44,7 @@ async function seed() {
     ];
 
     for (const u of additionalUsers) {
-      const pw = await bcrypt.hash('password123', 10);
+      const pw = await bcrypt.hash(demoPassword, 12);
       await pool.query(
         `INSERT INTO users (email, password, name, role, email_verified) VALUES ($1, $2, $3, $4, $5)`,
         [u.email, pw, u.name, u.role, u.verified]
@@ -366,7 +374,7 @@ async function seed() {
 
     console.log('Database seeded successfully!');
     console.log(`   - 16 users created (1 demo + 15 additional)`);
-    console.log(`   - Demo user: demo@menudigitizer.com / demo123456 (admin, verified)`);
+    console.log(`   - Demo admin: ${demoEmail} (verified; password not logged)`);
     console.log(`   - ${menus.length} menus created`);
     console.log(`   - ${menuItems.length} menu items created`);
     console.log(`   - ${allergens.length} allergen entries created`);

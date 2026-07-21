@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/connection';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { validatePassword } from '../middleware/validation';
+import { jwtSecret } from '../config/security';
 
 const router = Router();
 
@@ -30,8 +31,8 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId: user.id },
-      process.env.JWT_SECRET || 'default_secret',
+      { userId: user.id, role: user.role || 'viewer' },
+      jwtSecret(),
       { expiresIn: '24h' }
     );
 
@@ -82,8 +83,8 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const user = result.rows[0];
     const token = jwt.sign(
-      { userId: user.id },
-      process.env.JWT_SECRET || 'default_secret',
+      { userId: user.id, role: user.role },
+      jwtSecret(),
       { expiresIn: '24h' }
     );
 
@@ -309,6 +310,21 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
   }
 });
 
+// Conventional alias used by API clients to rehydrate the persisted session.
+router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, email, name, role, email_verified, created_at, updated_at FROM users WHERE id = $1',
+      [req.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Get current user error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Update profile
 router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -347,9 +363,13 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
 
 // Get demo credentials
 router.get('/demo-credentials', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not found' });
+  const email = process.env.DEMO_EMAIL || process.env.SEED_ADMIN_EMAIL;
+  const password = process.env.DEMO_PASSWORD || process.env.SEED_DEMO_PASSWORD;
+  if (!email || !password) return res.status(404).json({ error: 'Demo credentials are not configured' });
   res.json({
-    email: process.env.DEMO_EMAIL || 'demo@menudigitizer.com',
-    password: process.env.DEMO_PASSWORD || 'demo123456'
+    email,
+    password
   });
 });
 

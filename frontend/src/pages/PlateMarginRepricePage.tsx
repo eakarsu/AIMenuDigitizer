@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const API = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const API = '/api';
 
 export default function PlateMarginRepricePage() {
   const [items, setItems] = useState('Burger,4.25,14,120\nSalad,3.1,12,80\nPasta,5.4,17,65');

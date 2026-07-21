@@ -22,6 +22,7 @@ import ingredientCostsRoutes from './routes/ingredientCosts';
 import aiCostAnalysisRoutes from './routes/aiCostAnalysis';
 import integrationsRoutes from './routes/integrations';
 import plateMarginRepriceRoutes from './routes/plateMarginReprice';
+import menuWorkflowRoutes from './routes/menuWorkflow';
 
 // === BATCH 05 AUTO-MOUNT imports ===
 import visionMenuIntelRouter from './routes/vision-menu-intel';
@@ -66,6 +67,12 @@ app.use('/api/ingredient-costs', ingredientCostsRoutes);
 app.use('/api/ai', aiCostAnalysisRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/plate-margin-reprice', plateMarginRepriceRoutes);
+app.use('/api/menu-workflow', menuWorkflowRoutes);
+
+app.use(/^\/api\/(?:gap-|vision-menu-intel|menu-optimization-agent|dietary-compliance-stream|multi-language-menu|inventory-menu-link)/, (req, res, next) => {
+  if (process.env.ENABLE_EXPERIMENTAL_ROUTES === 'true') return next();
+  return res.status(501).json({ error: 'Generated/provider-backed surface is quarantined', required: 'ENABLE_EXPERIMENTAL_ROUTES=true plus documented provider configuration' });
+});
 
 // Health check
 app.get('/api/health', (req, res) => {

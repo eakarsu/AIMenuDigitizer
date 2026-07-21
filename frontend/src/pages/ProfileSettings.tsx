@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { authApi } from '../services/api';
 import { User, Lock, Mail, Shield, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter';
 
 export default function ProfileSettings() {
-  const { user } = useAuth();
   const [profile, setProfile] = useState({ name: '', email: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

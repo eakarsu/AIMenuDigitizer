@@ -1,5 +1,3 @@
-import { TrendingUp } from 'lucide-react';
-
 interface Props {
   suggestion: {
     id: number;

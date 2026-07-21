@@ -57,7 +57,7 @@ async function callOpenRouter(prompt: any) {
       const txt = await r.text();
       return { error: true, status: r.status, body: txt.slice(0, 500) };
     }
-    const data = await r.json();
+    const data: any = await r.json();
     const content = data?.choices?.[0]?.message?.content || JSON.stringify(data);
     return { output: content, model: data?.model };
   } catch (e: any) {

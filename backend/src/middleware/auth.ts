@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import pool from '../db/connection';
+import { jwtSecret } from '../config/security';
 
 export interface AuthRequest extends Request {
   userId?: number;
@@ -26,8 +27,9 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
       return res.status(401).json({ error: 'Token has been revoked' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret') as { userId: number };
+    const decoded = jwt.verify(token, jwtSecret()) as { userId: number; role?: string };
     req.userId = decoded.userId;
+    req.userRole = decoded.role || 'viewer';
     next();
   } catch (error) {
     return res.status(403).json({ error: 'Invalid or expired token' });

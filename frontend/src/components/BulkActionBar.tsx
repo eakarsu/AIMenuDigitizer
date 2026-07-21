@@ -1,4 +1,4 @@
-import { Trash2, Edit, X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 
 interface Props {
   selectedCount: number;
