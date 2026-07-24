@@ -42,8 +42,8 @@ export default function Login() {
       setEmail(response.data.email);
       setPassword(response.data.password);
     } catch {
-      setEmail('demo@menudigitizer.com');
-      setPassword('demo123456');
+      setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
+      setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
     }
   };
 
