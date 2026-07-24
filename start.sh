@@ -2,6 +2,10 @@
 set -Eeuo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$project_dir"
 [ -f .env ] || { echo 'Missing .env; copy .env.example and supply real secrets.' >&2; exit 1; }
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
 JWT_SECRET_VALUE="${JWT_SECRET:-}"; [ "${#JWT_SECRET_VALUE}" -ge 32 ] || { echo 'JWT_SECRET must contain at least 32 characters.' >&2; exit 1; }
 [ -n "${DATABASE_URL:-}" ] || { echo 'DATABASE_URL is required.' >&2; exit 1; }
 BACKEND_PORT="${BACKEND_PORT:?BACKEND_PORT is required}"; FRONTEND_PORT="${FRONTEND_PORT:?FRONTEND_PORT is required}"
