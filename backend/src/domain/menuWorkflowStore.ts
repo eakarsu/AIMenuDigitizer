@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import pool from '../db/connection';
 import { validateTransition } from './menuWorkflow';
 
@@ -19,10 +20,10 @@ export async function transitionMenu(input: Transition) {
   try {
     await client.query('BEGIN');
     const replay = await client.query(
-      `SELECT to_status FROM menu_workflow_audit WHERE tenant_id=$1 AND menu_ref=$2 AND correlation_id=$3`,
+      `SELECT to_status,menu_version,actor_id,reason,evidence FROM menu_workflow_audit WHERE tenant_id=$1 AND menu_ref=$2 AND correlation_id=$3`,
       [input.tenantId, input.menuRef, input.correlationId]
     );
-    if (replay.rows[0]) { await client.query('COMMIT'); return { status: replay.rows[0].to_status, replayed: true }; }
+    if (replay.rows[0]) { const prior=replay.rows[0]; if(prior.to_status!==input.to || Number(prior.menu_version)!==input.version || String(prior.actor_id)!==input.actorId || prior.reason!==input.reason || !isDeepStrictEqual(prior.evidence,input.context||{})) throw new Error('correlation id reused with different transition'); await client.query('COMMIT'); return { status: replay.rows[0].to_status, replayed: true }; }
     const current = await client.query(
       `SELECT status,created_by FROM menu_versions WHERE tenant_id=$1 AND menu_ref=$2 AND version=$3 FOR UPDATE`,
       [input.tenantId, input.menuRef, input.version]

@@ -156,7 +156,7 @@ export default function Login() {
                 onClick={fillDemoCredentials}
                 className="w-full btn-secondary py-3 text-sm"
               >
-                Fill Demo Credentials
+                Auto Fill Demo Credentials
               </button>
             </div>
           )}
