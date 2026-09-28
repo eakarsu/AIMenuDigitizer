@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
-// MenuPDFExporter — picks a restaurant + style + paper size and triggers a PDF download
-// from POST /api/custom-views/menu-pdf (binary response).
+// MenuPDFExporter — picks one of the user's real menus plus a style and paper
+// size, then triggers a PDF download from POST /api/custom-views/menu-pdf.
 
 function authHeaders() {
   const t = localStorage.getItem('token');
@@ -18,8 +18,8 @@ const STYLE_PREVIEW = {
 };
 
 export default function MenuPDFExporter() {
-  const [restaurants, setRestaurants] = useState([]);
-  const [restaurantId, setRestaurantId] = useState('');
+  const [menus, setMenus] = useState([]);
+  const [menuId, setMenuId] = useState('');
   const [style, setStyle] = useState('Classic');
   const [paper, setPaper] = useState('A4');
   const [loading, setLoading] = useState(true);
@@ -31,14 +31,15 @@ export default function MenuPDFExporter() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/custom-views/restaurants', {
+        const res = await fetch('/api/custom-views/menus', {
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         if (!cancelled) {
-          setRestaurants(data.restaurants || []);
-          if (data.restaurants && data.restaurants[0]) setRestaurantId(data.restaurants[0].id);
+          const list = data.menus || [];
+          setMenus(list);
+          if (list[0]) setMenuId(String(list[0].id));
         }
       } catch (e) {
         if (!cancelled) setError(e.message);
@@ -57,15 +58,17 @@ export default function MenuPDFExporter() {
       const res = await fetch('/api/custom-views/menu-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ restaurantId, style, paper }),
+        body: JSON.stringify({ menuId: Number(menuId), style, paper }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
       const blob = await res.blob();
       const sizeKB = Math.round(blob.size / 1024);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const r = restaurants.find((x) => x.id === restaurantId);
-      const fname = `menu-${r ? r.id : 'restaurant'}-${style.toLowerCase()}-${paper.toLowerCase()}.pdf`;
+      const fname = `menu-${menuId || 'export'}-${style.toLowerCase()}-${paper.toLowerCase()}.pdf`;
       a.href = url;
       a.download = fname;
       document.body.appendChild(a);
@@ -83,30 +86,37 @@ export default function MenuPDFExporter() {
   }
 
   const preview = STYLE_PREVIEW[style];
-  const selectedRestaurant = restaurants.find((r) => r.id === restaurantId);
+  const selectedMenu = menus.find((m) => String(m.id) === String(menuId));
+  const previewItems = (selectedMenu?.items || []).slice(0, 3);
 
   return (
     <div data-testid="menu-pdf-exporter" style={{
       background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16,
     }}>
       {loading ? (
-        <div style={{ color: '#6b7280' }}>Loading restaurants…</div>
+        <div style={{ color: '#6b7280' }}>Loading menus…</div>
+      ) : menus.length === 0 ? (
+        <div data-testid="pdf-empty" style={{ color: '#6b7280', fontSize: 13 }}>
+          No menus available. Create a menu with items first, then export it here.
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Restaurant</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Menu</span>
               <select
-                data-testid="pdf-restaurant"
-                value={restaurantId}
-                onChange={(e) => setRestaurantId(e.target.value)}
+                data-testid="pdf-menu"
+                value={menuId}
+                onChange={(e) => setMenuId(e.target.value)}
                 style={{
                   padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6,
                   background: '#fff', fontSize: 14,
                 }}
               >
-                {restaurants.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name} — {r.cuisine}</option>
+                {menus.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.restaurant_name ? ` — ${m.restaurant_name}` : ''} ({m.item_count} items)
+                  </option>
                 ))}
               </select>
             </label>
@@ -159,7 +169,7 @@ export default function MenuPDFExporter() {
 
             <button
               onClick={handleExport}
-              disabled={downloading || !restaurantId}
+              disabled={downloading || !menuId || (selectedMenu?.item_count || 0) === 0}
               data-testid="export-pdf-btn"
               style={{
                 marginTop: 4,
@@ -189,7 +199,7 @@ export default function MenuPDFExporter() {
             )}
           </div>
 
-          {/* Preview pane */}
+          {/* Preview pane — real items from the selected menu */}
           <div style={{
             background: preview.bg,
             border: `1px solid ${preview.accent}33`,
@@ -201,7 +211,7 @@ export default function MenuPDFExporter() {
             <div style={{
               fontSize: 18, fontWeight: 700, color: preview.accent, textAlign: 'center',
             }}>
-              {selectedRestaurant ? selectedRestaurant.name : 'Restaurant'}
+              {selectedMenu ? (selectedMenu.restaurant_name || selectedMenu.name) : 'Menu'}
             </div>
             <div style={{ textAlign: 'center', fontSize: 11, color: '#64748b', marginTop: 2 }}>
               {style} · {paper}
@@ -210,30 +220,32 @@ export default function MenuPDFExporter() {
               borderTop: `1px solid ${preview.accent}55`,
               margin: '10px 0',
             }} />
-            <div style={{ fontWeight: 700, color: preview.accent, fontSize: 13 }}>
-              BREAKFAST MENU
-            </div>
-            <div style={{ marginTop: 6, color: '#111827', fontSize: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 600 }}>Classic Eggs Benedict</span>
-                <span style={{ fontWeight: 700, color: preview.accent }}>$14.50</span>
+            {previewItems.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#6b7280', textAlign: 'center', marginTop: 24 }}>
+                This menu has no items yet.
               </div>
-              <div style={{ color: '#6b7280', fontSize: 11, fontStyle: style === 'Classic' ? 'italic' : 'normal' }}>
-                Two poached eggs on toasted English muffin, Canadian bacon, hollandaise.
+            ) : (
+              previewItems.map((item) => (
+                <div key={item.id} style={{ marginBottom: 10, color: '#111827', fontSize: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 600 }}>{item.name}</span>
+                    <span style={{ fontWeight: 700, color: preview.accent }}>
+                      {item.price != null ? `$${Number(item.price).toFixed(2)}` : ''}
+                    </span>
+                  </div>
+                  {item.description && (
+                    <div style={{ color: '#6b7280', fontSize: 11, fontStyle: style === 'Classic' ? 'italic' : 'normal' }}>
+                      {item.description}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            {selectedMenu && selectedMenu.item_count > previewItems.length && (
+              <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
+                Preview shows {previewItems.length} of {selectedMenu.item_count} items.
               </div>
-            </div>
-            <div style={{ marginTop: 8, color: '#111827', fontSize: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 600 }}>Smoked Salmon Omelet</span>
-                <span style={{ fontWeight: 700, color: preview.accent }}>$16.75</span>
-              </div>
-              <div style={{ color: '#6b7280', fontSize: 11, fontStyle: style === 'Classic' ? 'italic' : 'normal' }}>
-                Three-egg omelet with cold-smoked salmon, dill cream cheese, chives.
-              </div>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
-              Live preview — full PDF includes all sections, categories, dishes.
-            </div>
+            )}
           </div>
         </div>
       )}

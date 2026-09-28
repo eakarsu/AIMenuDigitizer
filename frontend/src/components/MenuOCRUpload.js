@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react';
 
-// MenuOCRUpload — drag-drop a menu image; backend returns a mock parsed menu structure.
+// MenuOCRUpload — drag-drop a menu image; the backend extracts the menu with
+// a configured vision provider. When no provider is configured the API returns
+// 503 and the page reports it — no local/mock fallback exists.
 
 function authHeaders() {
   const t = localStorage.getItem('token');
@@ -51,8 +53,8 @@ export default function MenuOCRUpload() {
         headers: { ...authHeaders() },
         body: fd,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setResult(data);
     } catch (e) {
       setError(e.message);
@@ -171,15 +173,17 @@ export default function MenuOCRUpload() {
                 marginBottom: 8,
               }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>
-                  Parsed Menu
+                  Extracted Menu
                 </div>
-                <div style={{
-                  background: result.confidence >= 0.85 ? '#dcfce7' : '#fef3c7',
-                  color: result.confidence >= 0.85 ? '#166534' : '#92400e',
-                  borderRadius: 999, padding: '2px 10px', fontSize: 11, fontWeight: 700,
-                }}>
-                  {(result.confidence * 100).toFixed(1)}% confidence
-                </div>
+                {typeof result.confidence === 'number' && (
+                  <div style={{
+                    background: result.confidence >= 0.85 ? '#dcfce7' : '#fef3c7',
+                    color: result.confidence >= 0.85 ? '#166534' : '#92400e',
+                    borderRadius: 999, padding: '2px 10px', fontSize: 11, fontWeight: 700,
+                  }}>
+                    {(result.confidence * 100).toFixed(1)}% confidence
+                  </div>
+                )}
               </div>
 
               {result.parsed_sections.map((sec, i) => (
@@ -198,10 +202,12 @@ export default function MenuOCRUpload() {
                       }}>
                         <span style={{ fontWeight: 600 }}>{d.name}</span>
                         <span style={{ fontWeight: 700, color: '#065f46' }}>
-                          ${Number(d.price).toFixed(2)}
+                          {d.price != null ? `$${Number(d.price).toFixed(2)}` : '—'}
                         </span>
                       </div>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>{d.description}</div>
+                      {d.description && (
+                        <div style={{ fontSize: 11, color: '#6b7280' }}>{d.description}</div>
+                      )}
                     </div>
                   ))}
                 </div>

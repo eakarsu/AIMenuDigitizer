@@ -33,9 +33,12 @@ router.get('/csv/:type', authenticateToken, async (req: AuthRequest, res: Respon
         if (!menuId) return res.status(400).json({ error: 'menuId is required' });
         const result = await pool.query(
           `SELECT a.name, a.severity, a.description, mi.name as item_name, mi.category
-           FROM allergens a JOIN menu_items mi ON a.menu_item_id = mi.id
-           WHERE mi.menu_id = $1 ORDER BY mi.name, a.name`,
-          [menuId]
+           FROM allergens a
+           JOIN menu_items mi ON a.menu_item_id = mi.id
+           JOIN menus m ON mi.menu_id = m.id
+           WHERE mi.menu_id = $1 AND m.user_id = $2
+           ORDER BY mi.name, a.name`,
+          [menuId, req.userId]
         );
         headers = ['Item', 'Category', 'Allergen', 'Severity', 'Description'];
         rows = result.rows.map(r => [r.item_name, r.category, r.name, r.severity, r.description]);
@@ -46,9 +49,12 @@ router.get('/csv/:type', authenticateToken, async (req: AuthRequest, res: Respon
         if (!menuId) return res.status(400).json({ error: 'menuId is required' });
         const result = await pool.query(
           `SELECT n.*, mi.name as item_name, mi.category
-           FROM nutrition n JOIN menu_items mi ON n.menu_item_id = mi.id
-           WHERE mi.menu_id = $1 ORDER BY mi.name`,
-          [menuId]
+           FROM nutrition n
+           JOIN menu_items mi ON n.menu_item_id = mi.id
+           JOIN menus m ON mi.menu_id = m.id
+           WHERE mi.menu_id = $1 AND m.user_id = $2
+           ORDER BY mi.name`,
+          [menuId, req.userId]
         );
         headers = ['Item', 'Category', 'Calories', 'Protein(g)', 'Carbs(g)', 'Fat(g)', 'Fiber(g)', 'Sodium(mg)', 'Sugar(g)', 'Serving'];
         rows = result.rows.map(r => [r.item_name, r.category, r.calories, r.protein, r.carbohydrates, r.fat, r.fiber, r.sodium, r.sugar, r.serving_size]);
@@ -59,9 +65,12 @@ router.get('/csv/:type', authenticateToken, async (req: AuthRequest, res: Respon
         if (!menuId) return res.status(400).json({ error: 'menuId is required' });
         const result = await pool.query(
           `SELECT t.*, mi.name as original_name
-           FROM translations t JOIN menu_items mi ON t.menu_item_id = mi.id
-           WHERE mi.menu_id = $1 ORDER BY t.language_name, mi.name`,
-          [menuId]
+           FROM translations t
+           JOIN menu_items mi ON t.menu_item_id = mi.id
+           JOIN menus m ON mi.menu_id = m.id
+           WHERE mi.menu_id = $1 AND m.user_id = $2
+           ORDER BY t.language_name, mi.name`,
+          [menuId, req.userId]
         );
         headers = ['Original', 'Language', 'Translated Name', 'Translated Description'];
         rows = result.rows.map(r => [r.original_name, r.language_name, r.translated_name, r.translated_description]);
@@ -126,8 +135,12 @@ router.get('/pdf/:type', authenticateToken, async (req: AuthRequest, res: Respon
         if (!menuId) { doc.end(); return res.status(400).json({ error: 'menuId required' }); }
         const result = await pool.query(
           `SELECT a.name, a.severity, a.description, mi.name as item_name
-           FROM allergens a JOIN menu_items mi ON a.menu_item_id = mi.id WHERE mi.menu_id = $1 ORDER BY mi.name`,
-          [menuId]
+           FROM allergens a
+           JOIN menu_items mi ON a.menu_item_id = mi.id
+           JOIN menus m ON mi.menu_id = m.id
+           WHERE mi.menu_id = $1 AND m.user_id = $2
+           ORDER BY mi.name`,
+          [menuId, req.userId]
         );
         title = 'Allergens Report';
         headers = ['Item', 'Allergen', 'Severity', 'Description'];
@@ -137,8 +150,13 @@ router.get('/pdf/:type', authenticateToken, async (req: AuthRequest, res: Respon
       case 'nutrition': {
         if (!menuId) { doc.end(); return res.status(400).json({ error: 'menuId required' }); }
         const result = await pool.query(
-          `SELECT n.*, mi.name as item_name FROM nutrition n JOIN menu_items mi ON n.menu_item_id = mi.id WHERE mi.menu_id = $1 ORDER BY mi.name`,
-          [menuId]
+          `SELECT n.*, mi.name as item_name
+           FROM nutrition n
+           JOIN menu_items mi ON n.menu_item_id = mi.id
+           JOIN menus m ON mi.menu_id = m.id
+           WHERE mi.menu_id = $1 AND m.user_id = $2
+           ORDER BY mi.name`,
+          [menuId, req.userId]
         );
         title = 'Nutrition Report';
         headers = ['Item', 'Calories', 'Protein', 'Carbs', 'Fat', 'Serving'];
@@ -148,8 +166,13 @@ router.get('/pdf/:type', authenticateToken, async (req: AuthRequest, res: Respon
       case 'translations': {
         if (!menuId) { doc.end(); return res.status(400).json({ error: 'menuId required' }); }
         const result = await pool.query(
-          `SELECT t.*, mi.name as original_name FROM translations t JOIN menu_items mi ON t.menu_item_id = mi.id WHERE mi.menu_id = $1 ORDER BY t.language_name`,
-          [menuId]
+          `SELECT t.*, mi.name as original_name
+           FROM translations t
+           JOIN menu_items mi ON t.menu_item_id = mi.id
+           JOIN menus m ON mi.menu_id = m.id
+           WHERE mi.menu_id = $1 AND m.user_id = $2
+           ORDER BY t.language_name`,
+          [menuId, req.userId]
         );
         title = 'Translations Report';
         headers = ['Original', 'Language', 'Translation'];

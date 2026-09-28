@@ -107,9 +107,10 @@ export default function CaloriesPage() {
   const fetchMenus = async () => {
     try {
       const response = await menuApi.getAll();
-      setMenus(response.data);
-      if (response.data.length > 0) {
-        setSelectedMenu(response.data[0].id);
+      const menuList = response.data.data || response.data;
+      setMenus(menuList);
+      if (menuList.length > 0) {
+        setSelectedMenu(menuList[0].id);
       }
     } catch (error) {
       addToast('Error fetching menus', 'error');

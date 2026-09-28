@@ -1,8 +1,69 @@
 import { Response } from 'express';
+import pdfParse from 'pdf-parse';
 import { AuthRequest } from '../middleware/auth';
 import openRouterService from '../services/openrouter';
 import { enqueueJob, getJob } from '../services/jobQueue';
 import pool from '../db/connection';
+
+// ---------------------------------------------------------------------------
+// Tenant scoping helpers — AI endpoints must reject ids that belong to another
+// account instead of reading/logging against them.
+// ---------------------------------------------------------------------------
+
+async function menuOwnedByUser(menuId: unknown, userId: number | undefined): Promise<boolean> {
+  if (!menuId || !userId) return false;
+  const result = await pool.query('SELECT id FROM menus WHERE id = $1 AND user_id = $2', [menuId, userId]);
+  return result.rows.length > 0;
+}
+
+async function menuItemOwnedByUser(menuItemId: unknown, userId: number | undefined): Promise<boolean> {
+  if (!menuItemId || !userId) return false;
+  const result = await pool.query(
+    `SELECT mi.id FROM menu_items mi JOIN menus m ON mi.menu_id = m.id WHERE mi.id = $1 AND m.user_id = $2`,
+    [menuItemId, userId]
+  );
+  return result.rows.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// PDF text extraction — never pass base64 bytes to the model.
+// Accepts plain extracted text, or base64 PDF data (with or without the
+// [PDF_BASE64]: marker the UI sends). Uses pdf-parse; image-only PDFs are
+// rejected with a clear error instead of being sent to the model as garbage.
+// ---------------------------------------------------------------------------
+
+const PDF_BASE64_PREFIX = '[PDF_BASE64]:';
+
+async function extractPdfText(input: string): Promise<{ text?: string; error?: string }> {
+  const isMarkedBase64 = input.startsWith(PDF_BASE64_PREFIX);
+  const maybeBase64 = isMarkedBase64 ? input.slice(PDF_BASE64_PREFIX.length) : input.trim();
+  if (!isMarkedBase64 && !maybeBase64.startsWith('JVBER')) {
+    // Plain text extracted elsewhere — pass through unchanged.
+    return { text: input };
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(maybeBase64, 'base64');
+  } catch {
+    return { error: 'PDF payload is not valid base64 data' };
+  }
+
+  if (buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    return { error: 'PDF payload is not a valid PDF document' };
+  }
+
+  try {
+    const parsed = await pdfParse(buffer);
+    const text = (parsed.text || '').trim();
+    if (!text) {
+      return { error: 'No extractable text found in this PDF. Scanned/image-only PDFs are not supported — upload an image for vision analysis instead.' };
+    }
+    return { text };
+  } catch (error: any) {
+    return { error: `Failed to extract text from PDF: ${error.message}` };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Job status endpoint — GET /api/ai/jobs/:id
@@ -38,6 +99,11 @@ export async function analyzeImage(req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
+    if (menuId && !(await menuOwnedByUser(menuId, req.userId))) {
+      res.status(404).json({ error: 'Menu not found' });
+      return;
+    }
+
     const result = await openRouterService.analyzeMenuImage(imageBase64, menuId, mimeType);
 
     if (!result.success) {
@@ -62,6 +128,11 @@ export async function analyzeText(req: AuthRequest, res: Response): Promise<void
 
     if (!menuText) {
       res.status(400).json({ error: 'Menu text is required' });
+      return;
+    }
+
+    if (menuId && !(await menuOwnedByUser(menuId, req.userId))) {
+      res.status(404).json({ error: 'Menu not found' });
       return;
     }
 
@@ -92,6 +163,11 @@ export async function detectAllergens(req: AuthRequest, res: Response): Promise<
       return;
     }
 
+    if (menuItemId && !(await menuItemOwnedByUser(menuItemId, req.userId))) {
+      res.status(404).json({ error: 'Menu item not found' });
+      return;
+    }
+
     const result = await openRouterService.detectAllergens(itemName, description || '', menuItemId);
 
     if (!result.success) {
@@ -119,6 +195,11 @@ export async function estimateCalories(req: AuthRequest, res: Response): Promise
       return;
     }
 
+    if (menuItemId && !(await menuItemOwnedByUser(menuItemId, req.userId))) {
+      res.status(404).json({ error: 'Menu item not found' });
+      return;
+    }
+
     const result = await openRouterService.estimateCalories(itemName, description || '', menuItemId);
 
     if (!result.success) {
@@ -143,6 +224,11 @@ export async function translateMenuItem(req: AuthRequest, res: Response): Promis
 
     if (!itemName || !targetLanguage) {
       res.status(400).json({ error: 'Item name and target language are required' });
+      return;
+    }
+
+    if (menuItemId && !(await menuItemOwnedByUser(menuItemId, req.userId))) {
+      res.status(404).json({ error: 'Menu item not found' });
       return;
     }
 
@@ -174,6 +260,11 @@ export async function optimizePriceQueued(req: AuthRequest, res: Response): Prom
       return;
     }
 
+    if (menuItemId && !(await menuItemOwnedByUser(menuItemId, req.userId))) {
+      res.status(404).json({ error: 'Menu item not found' });
+      return;
+    }
+
     const jobId = enqueueJob(() =>
       openRouterService.optimizePrice(
         itemName,
@@ -201,6 +292,11 @@ export async function recommendDishes(req: AuthRequest, res: Response): Promise<
 
     if (!menuId) {
       res.status(400).json({ error: 'Menu ID is required' });
+      return;
+    }
+
+    if (!(await menuOwnedByUser(menuId, req.userId))) {
+      res.status(404).json({ error: 'Menu not found' });
       return;
     }
 
@@ -238,6 +334,11 @@ export async function nutritionHealthcareQueued(req: AuthRequest, res: Response)
       return;
     }
 
+    if (menuItemId && !(await menuItemOwnedByUser(menuItemId, req.userId))) {
+      res.status(404).json({ error: 'Menu item not found' });
+      return;
+    }
+
     const jobId = enqueueJob(() =>
       openRouterService.analyzeNutritionHealthcare(
         itemName,
@@ -271,6 +372,11 @@ export async function dietaryFilterRecommendations(req: AuthRequest, res: Respon
       return;
     }
 
+    if (!(await menuOwnedByUser(menuId, req.userId))) {
+      res.status(404).json({ error: 'Menu not found' });
+      return;
+    }
+
     const filterArr = Array.isArray(filters) ? filters : (typeof filters === 'string' ? filters.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
 
     const result = await openRouterService.dietaryFilterRecommendations(parseInt(menuId), filterArr, notes || '');
@@ -299,6 +405,11 @@ export async function menuSeasonalRotation(req: AuthRequest, res: Response): Pro
     const { menuId, season, region } = req.body;
     if (!menuId || !season) {
       res.status(400).json({ error: 'menuId and season are required' });
+      return;
+    }
+
+    if (!(await menuOwnedByUser(menuId, req.userId))) {
+      res.status(404).json({ error: 'Menu not found' });
       return;
     }
 
@@ -452,14 +563,31 @@ export async function deleteDishRecommendation(req: AuthRequest, res: Response):
 
 export async function analyzePdfMenu(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { pdfText, menuId } = req.body;
+    const { pdfText, pdfBase64, menuId } = req.body;
 
-    if (!pdfText) {
-      res.status(400).json({ error: 'pdfText is required' });
+    // The UI sends base64 PDF bytes as [PDF_BASE64]:<data>; accept a plain
+    // pdfBase64 field too, or already-extracted plain text.
+    const rawPayload = typeof pdfText === 'string' && pdfText
+      ? pdfText
+      : (typeof pdfBase64 === 'string' && pdfBase64 ? `${PDF_BASE64_PREFIX}${pdfBase64}` : '');
+
+    if (!rawPayload) {
+      res.status(400).json({ error: 'pdfText (extracted text) or pdfBase64 (PDF file) is required' });
       return;
     }
 
-    const result = await openRouterService.analyzeMenuPdf(pdfText, menuId);
+    if (menuId && !(await menuOwnedByUser(menuId, req.userId))) {
+      res.status(404).json({ error: 'Menu not found' });
+      return;
+    }
+
+    const extracted = await extractPdfText(rawPayload);
+    if (extracted.error || !extracted.text) {
+      res.status(422).json({ error: extracted.error || 'Could not extract text from the PDF' });
+      return;
+    }
+
+    const result = await openRouterService.analyzeMenuPdf(extracted.text, menuId);
 
     if (!result.success) {
       res.status(500).json({ error: result.error });

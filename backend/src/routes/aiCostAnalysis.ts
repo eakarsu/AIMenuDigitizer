@@ -22,6 +22,13 @@ router.post('/cost-analysis', authenticateToken, heavyAiLimiter, async (req: Aut
       return;
     }
 
+    // Reject menus that belong to another account instead of reading their data.
+    const menuCheck = await pool.query('SELECT id FROM menus WHERE id = $1 AND user_id = $2', [menuId, req.userId]);
+    if (menuCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Menu not found' });
+      return;
+    }
+
     // Pull aggregated cost rows from the deterministic analysis.
     const items = await pool.query(
       `SELECT mi.id, mi.name, mi.price,

@@ -89,6 +89,11 @@ router.get('/analysis/:menuId', authenticateToken, async (req: AuthRequest, res:
       res.status(400).json({ error: 'Invalid menuId' });
       return;
     }
+    const menuCheck = await pool.query('SELECT id FROM menus WHERE id = $1 AND user_id = $2', [menuId, req.userId]);
+    if (menuCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Menu not found' });
+      return;
+    }
     const items = await pool.query(
       `SELECT mi.id AS item_id, mi.name, mi.price,
               COALESCE(SUM(i.cost_per_unit * mii.quantity_per_serving), 0) AS food_cost

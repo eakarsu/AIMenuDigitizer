@@ -1,8 +1,12 @@
 import { Response } from 'express';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 import { AuthRequest } from '../middleware/auth';
 import { parsePagination } from '../middleware/pagination';
 import { parseSearch } from '../middleware/search';
 import { parseSort } from '../middleware/sort';
+import { jwtSecret } from '../config/security';
+import { validateTransition } from '../domain/menuWorkflow';
 import pool from '../db/connection';
 
 // ---------------------------------------------------------------------------
@@ -343,9 +347,11 @@ export async function getPublicMenu(req: AuthRequest, res: Response): Promise<vo
     // Return JSON if the client requests it or passes _json=1
     const wantsJson = req.headers.accept?.includes('application/json') || req.query._json === '1';
 
-    // Fetch the menu (no user_id check — public endpoint)
+    // Fetch the menu including its publication state. Publication is an
+    // explicit, evidenced action (POST /menus/:id/publication) — a menu that
+    // has never been published is never served to anonymous visitors.
     const menuResult = await pool.query(
-      'SELECT id, name, restaurant_name, description FROM menus WHERE id = $1',
+      'SELECT id, name, restaurant_name, description, user_id, publication_status FROM menus WHERE id = $1',
       [id]
     );
 
@@ -355,6 +361,36 @@ export async function getPublicMenu(req: AuthRequest, res: Response): Promise<vo
     }
 
     const menu = menuResult.rows[0];
+    const isPublished = menu.publication_status === 'published';
+
+    if (!isPublished) {
+      // Private menus may still be previewed by their owner: accept a valid
+      // session token that matches the menu's user_id. Everyone else gets the
+      // same 404 as a missing menu so existence is not leaked.
+      let isOwnerPreview = false;
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+      if (token) {
+        try {
+          const blacklisted = await pool.query(
+            'SELECT id FROM token_blacklist WHERE token = $1 AND expires_at > NOW()',
+            [token]
+          );
+          if (blacklisted.rows.length === 0) {
+            const decoded = jwt.verify(token, jwtSecret()) as { userId: number };
+            isOwnerPreview = String(decoded.userId) === String(menu.user_id);
+          }
+        } catch {
+          isOwnerPreview = false;
+        }
+      }
+      if (!isOwnerPreview) {
+        res.status(404).json({ error: 'Menu not found or not published' });
+        return;
+      }
+    }
+
+    const { user_id, publication_status, ...publicMenu } = menu;
 
     // Fetch items with allergens and translations
     const itemsResult = await pool.query(
@@ -381,7 +417,7 @@ export async function getPublicMenu(req: AuthRequest, res: Response): Promise<vo
 
     // Return JSON for API consumers (React frontend public page)
     if (wantsJson) {
-      res.json({ ...menu, items });
+      res.json({ ...publicMenu, items });
       return;
     }
 
@@ -452,7 +488,7 @@ export async function getPublicMenu(req: AuthRequest, res: Response): Promise<vo
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(menu.restaurant_name || menu.name)} — Menu</title>
+  <title>${escapeHtml(publicMenu.restaurant_name || publicMenu.name)} — Menu</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fafafa; color: #1a1a1a; }
@@ -483,8 +519,8 @@ export async function getPublicMenu(req: AuthRequest, res: Response): Promise<vo
 </head>
 <body>
   <header>
-    <h1>${escapeHtml(menu.restaurant_name || menu.name)}</h1>
-    ${menu.description ? `<p>${escapeHtml(menu.description)}</p>` : ''}
+    <h1>${escapeHtml(publicMenu.restaurant_name || publicMenu.name)}</h1>
+    ${publicMenu.description ? `<p>${escapeHtml(publicMenu.description)}</p>` : ''}
   </header>
   <main>
     ${renderCategories()}
@@ -498,5 +534,77 @@ export async function getPublicMenu(req: AuthRequest, res: Response): Promise<vo
   } catch (error) {
     console.error('Error fetching public menu:', error);
     res.status(500).json({ error: 'Failed to fetch menu' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Menu publication gate — POST /menus/:id/publication (owner + authority only)
+//
+// A menu may only be exposed at /menus/:id/public once an authorised operator
+// records an evidenced publication (provider receipt + rollback version). The
+// domain validator (menuWorkflow.validateTransition) is the single source of
+// truth for who may publish and what evidence is required.
+// ---------------------------------------------------------------------------
+
+export async function setMenuPublication(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { published, providerReceipt, rollbackVersion, reason } = req.body || {};
+
+    const menuCheck = await pool.query('SELECT id, name FROM menus WHERE id = $1 AND user_id = $2', [id, req.userId]);
+    if (menuCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Menu not found' });
+      return;
+    }
+
+    const role = req.userRole === 'manager' ? 'menu_manager' : req.userRole;
+    const fromStatus = published === true ? 'scheduled' : 'published';
+    const toStatus = published === true ? 'published' : 'rolled_back';
+
+    try {
+      // Publishing requires authority plus a provider receipt and rollback
+      // version; unpublishing requires the same authority check.
+      validateTransition(fromStatus, toStatus, { role, providerReceipt, rollbackVersion });
+    } catch (error: any) {
+      res.status(422).json({ error: error.message });
+      return;
+    }
+
+    const result = published === true
+      ? await pool.query(
+          `UPDATE menus SET publication_status = 'published', published_at = NOW(),
+             publication_receipt = $1, publication_rollback_version = $2, updated_at = NOW()
+           WHERE id = $3 AND user_id = $4
+           RETURNING id, name, publication_status, published_at, publication_receipt, publication_rollback_version`,
+          [providerReceipt, Number(rollbackVersion), id, req.userId]
+        )
+      : await pool.query(
+          `UPDATE menus SET publication_status = 'private', published_at = NULL, updated_at = NOW()
+           WHERE id = $1 AND user_id = $2
+           RETURNING id, name, publication_status, published_at`,
+          [id, req.userId]
+        );
+
+    await pool.query(
+      `INSERT INTO menu_workflow_audit (tenant_id, menu_ref, menu_version, from_status, to_status, actor_id, actor_role, reason, evidence, correlation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10) ON CONFLICT DO NOTHING`,
+      [
+        String(req.userId),
+        `menu:${id}`,
+        1,
+        published === true ? 'scheduled' : 'published',
+        toStatus,
+        String(req.userId),
+        role || 'viewer',
+        reason || (published === true ? 'published via menu publication gate' : 'unpublished'),
+        JSON.stringify({ providerReceipt: providerReceipt || null, rollbackVersion: rollbackVersion ?? null }),
+        uuidv4()
+      ]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error setting menu publication:', error);
+    res.status(500).json({ error: 'Failed to update menu publication' });
   }
 }

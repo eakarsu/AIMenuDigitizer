@@ -23,7 +23,6 @@ import aiCostAnalysisRoutes from './routes/aiCostAnalysis';
 import integrationsRoutes from './routes/integrations';
 import plateMarginRepriceRoutes from './routes/plateMarginReprice';
 import menuWorkflowRoutes from './routes/menuWorkflow';
-import menuSeasonalRoutes from './routes/menuSeasonal';
 import guestOpsRoutes from './routes/guestOps';
 
 // === BATCH 05 AUTO-MOUNT imports ===
@@ -70,7 +69,6 @@ app.use('/api/ai', aiCostAnalysisRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/plate-margin-reprice', plateMarginRepriceRoutes);
 app.use('/api/menu-workflow', menuWorkflowRoutes);
-app.use('/api/menu-seasonal', menuSeasonalRoutes);
 app.use('/api/guest-ops', guestOpsRoutes);
 
 app.use(/^\/api\/(?:gap-|vision-menu-intel|menu-optimization-agent|dietary-compliance-stream|multi-language-menu|inventory-menu-link)/, (req, res, next) => {
@@ -116,10 +114,4 @@ app.use('/api/multi-language-menu', multiLanguageMenuRouter);
 app.use('/api/inventory-menu-link', inventoryMenuLinkRouter);
 
 // === Batch 05 Gaps & Frontend Mounts ===
-try { const _gap_menu_seasonal_rotation = require('./routes/gap-menu-seasonal-rotation'); (app as any).use('/api/gap-menu-seasonal-rotation', _gap_menu_seasonal_rotation.default || _gap_menu_seasonal_rotation); } catch(e) { console.error('gap mount fail menu-seasonal-rotation:', (e as any).message); }
-try { const _gap_guest_preference_personalization = require('./routes/gap-guest-preference-personalization'); (app as any).use('/api/gap-guest-preference-personalization', _gap_guest_preference_personalization.default || _gap_guest_preference_personalization); } catch(e) { console.error('gap mount fail guest-preference-personalization:', (e as any).message); }
-try { const _gap_waste_reduction_advisor = require('./routes/gap-waste-reduction-advisor'); (app as any).use('/api/gap-waste-reduction-advisor', _gap_waste_reduction_advisor.default || _gap_waste_reduction_advisor); } catch(e) { console.error('gap mount fail waste-reduction-advisor:', (e as any).message); }
-try { const _gap_guest = require('./routes/gap-guest'); (app as any).use('/api/gap-guest', _gap_guest.default || _gap_guest); } catch(e) { console.error('gap mount fail guest:', (e as any).message); }
-try { const _gap_webhooks = require('./routes/gap-webhooks'); (app as any).use('/api/gap-webhooks', _gap_webhooks.default || _gap_webhooks); } catch(e) { console.error('gap mount fail webhooks:', (e as any).message); }
-try { const _gap_order = require('./routes/gap-order'); (app as any).use('/api/gap-order', _gap_order.default || _gap_order); } catch(e) { console.error('gap mount fail order:', (e as any).message); }
 // === End Batch 05 Mounts ===

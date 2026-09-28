@@ -3,7 +3,9 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LabelList,
 } from 'recharts';
 
-// DishPopularity — horizontal bar chart of top-N dishes by order count.
+// DishPopularity — renders order-count data when an order/POS source is
+// connected. The backend returns 503 with a clear reason when one is not.
+// No order counts are ever simulated in the UI.
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload || payload.length === 0) return null;
@@ -46,7 +48,7 @@ export default function DishPopularity({ data, loading, error }) {
       background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16,
     }}>
       <div style={{ marginBottom: 8, color: '#374151', fontSize: 13 }}>
-        Top <strong>{dishes.length}</strong> dishes by simulated order count
+        Top <strong>{dishes.length}</strong> dishes by recorded order count
       </div>
       <div style={{ width: '100%', height }}>
         <ResponsiveContainer width="100%" height="100%">

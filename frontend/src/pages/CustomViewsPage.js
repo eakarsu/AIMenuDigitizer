@@ -16,8 +16,9 @@ function authHeaders() {
 
 async function getJSON(path) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json', ...authHeaders() } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
 export default function CustomViewsPage() {
@@ -73,8 +74,12 @@ export default function CustomViewsPage() {
 
       <section>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: '#374151', marginBottom: 8 }}>
-          Top 15 Dishes by Order Count
+          Dish Popularity
         </h2>
+        <p style={{ color: '#6b7280', fontSize: 13, marginTop: 0, marginBottom: 10 }}>
+          Order counts come from a connected POS/order source. Until one is configured the
+          backend returns a clear "no order data source" response instead of estimated numbers.
+        </p>
         <DishPopularity data={pop} loading={popLoading} error={popErr} />
       </section>
 
@@ -93,7 +98,8 @@ export default function CustomViewsPage() {
           OCR Menu Image Upload
         </h2>
         <p style={{ color: '#6b7280', fontSize: 13, marginTop: 0, marginBottom: 10 }}>
-          Drag-and-drop a photo of a menu to extract sections, dishes, and prices (mock OCR).
+          Drag-and-drop a photo of a menu to extract sections, dishes, and prices with the
+          configured vision provider. Extraction fails clearly if no provider is configured.
         </p>
         <MenuOCRUpload />
       </section>

@@ -1,14 +1,7 @@
 import React, { useState } from 'react';
 
-// MenuTree — collapsible tree of sections -> categories -> dishes.
-// Each leaf dish shows its price and a popularity badge.
-
-const BADGE_STYLE = {
-  hot:     { bg: '#fee2e2', fg: '#991b1b', label: 'Hot'     },
-  popular: { bg: '#ffedd5', fg: '#9a3412', label: 'Popular' },
-  steady:  { bg: '#dbeafe', fg: '#1e40af', label: 'Steady'  },
-  slow:    { bg: '#f3f4f6', fg: '#374151', label: 'Slow'    },
-};
+// MenuTree — collapsible tree of menus -> categories -> dishes, built from the
+// signed-in user's real menu data (no synthesized order counts or badges).
 
 function Caret({ open }) {
   return (
@@ -22,17 +15,6 @@ function Caret({ open }) {
   );
 }
 
-function Badge({ kind }) {
-  const s = BADGE_STYLE[kind] || BADGE_STYLE.steady;
-  return (
-    <span style={{
-      background: s.bg, color: s.fg,
-      fontSize: 11, fontWeight: 600,
-      padding: '2px 8px', borderRadius: 999, marginLeft: 8,
-    }}>{s.label}</span>
-  );
-}
-
 function DishLeaf({ dish }) {
   return (
     <li style={{
@@ -42,15 +24,9 @@ function DishLeaf({ dish }) {
     }}>
       <span style={{ color: '#111827', fontSize: 14 }}>
         {dish.name}
-        <span style={{ color: '#6b7280', fontSize: 12, marginLeft: 8 }}>
-          ({dish.orderCount} orders)
-        </span>
       </span>
-      <span>
-        <span style={{ fontWeight: 600, color: '#065f46' }}>
-          ${Number(dish.price).toFixed(2)}
-        </span>
-        <Badge kind={dish.badge} />
+      <span style={{ fontWeight: 600, color: '#065f46' }}>
+        {dish.price != null ? `$${Number(dish.price).toFixed(2)}` : '—'}
       </span>
     </li>
   );
@@ -99,6 +75,11 @@ function SectionNode({ section }) {
       >
         <Caret open={open} />
         {section.name}
+        {section.subtitle && (
+          <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+            {section.subtitle}
+          </span>
+        )}
         <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
           {section.categories.length} categories · {dishCount} dishes
         </span>

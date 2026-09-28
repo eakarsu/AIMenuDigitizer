@@ -237,10 +237,11 @@ export default function AIAnalysisPage() {
   const fetchMenus = async () => {
     try {
       const response = await menuApi.getAll();
-      setMenus(response.data);
-      if (response.data.length > 0) {
-        setSelectedMenu(response.data[0].id);
-        setImportMenuId(response.data[0].id);
+      const menuList = response.data.data || response.data;
+      setMenus(menuList);
+      if (menuList.length > 0) {
+        setSelectedMenu(menuList[0].id);
+        setImportMenuId(menuList[0].id);
       }
     } catch (error) {
       addToast('Error fetching menus', 'error');
@@ -323,27 +324,29 @@ export default function AIAnalysisPage() {
     setExtractedItems([]);
     setImportSuccess(false);
     try {
-      // Read the PDF file as text using FileReader (the text will be sent to backend)
-      // For a real implementation, the backend would parse with pdf-parse
-      // Here we send the raw file content as base64 and the backend extracts text
+      // The backend extracts the PDF text with pdf-parse before calling the
+      // model; base64 bytes are never sent to the model as prompt text.
       const reader = new FileReader();
       reader.onload = async (ev) => {
         try {
           const base64 = (ev.target?.result as string).split(',')[1];
-          // We pass pdfText as a signal to the backend that it is base64-encoded PDF
           const response = await aiApi.analyzePdfMenu(`[PDF_BASE64]:${base64}`, selectedMenu || undefined);
           setResult(response.data);
           addToast('PDF analysis complete', 'success');
           fetchHistory();
-        } catch (error) {
-          addToast('Error analyzing PDF', 'error');
+        } catch (error: any) {
+          addToast(error?.response?.data?.error || 'Error analyzing PDF', 'error');
         } finally {
           setPdfLoading(false);
         }
       };
+      reader.onerror = () => {
+        addToast('Error reading PDF file', 'error');
+        setPdfLoading(false);
+      };
       reader.readAsDataURL(pdfFile);
-    } catch (error) {
-      addToast('Error reading PDF file', 'error');
+    } catch (error: any) {
+      addToast(error?.response?.data?.error || 'Error reading PDF file', 'error');
       setPdfLoading(false);
     }
   };

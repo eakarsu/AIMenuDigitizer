@@ -1,216 +1,229 @@
-// Custom Views — bespoke menu analytics endpoints.
-// Provides synthesized data for:
-//   GET  /api/custom-views/menu-tree        -> hierarchical menu structure
-//   GET  /api/custom-views/dish-popularity  -> top N dishes by simulated order count
-//   GET  /api/custom-views/restaurants      -> picker list for PDF export
-//   POST /api/custom-views/menu-pdf         -> downloadable styled PDF menu
-//   POST /api/custom-views/menu-ocr         -> mock OCR parse of uploaded menu image
-// Data is synthesized deterministically so the UI is meaningful even when no
-// real menus exist yet.
+// Custom Views — menu analytics backed by the signed-in user's real data.
+//
+//   GET  /api/custom-views/menu-tree        -> hierarchy built from this user's menus
+//   GET  /api/custom-views/dish-popularity  -> requires an order/POS data source (503 without one)
+//   GET  /api/custom-views/menus            -> this user's menus (picker for PDF export)
+//   POST /api/custom-views/menu-pdf         -> downloadable PDF of one real menu
+//   POST /api/custom-views/menu-ocr         -> provider-backed image extraction (503 without a provider)
+//
+// Nothing here synthesizes dishes, prices, confidence scores or order counts.
 const { Router } = require('express');
 const PDFDocument = require('pdfkit');
 const multer = require('multer');
+const pool = require('../db/connection').default;
+const { authenticateToken } = require('../middleware/auth');
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
-// Deterministic pseudo-random helper so popularity rankings are stable.
-function hash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h) + str.charCodeAt(i);
-    h |= 0;
+router.use(authenticateToken);
+
+// ---------------------------------------------------------------------------
+// OPENROUTER helpers — real provider calls only. When no key is configured the
+// route fails with 503 and says so; it never falls back to generated data.
+// ---------------------------------------------------------------------------
+
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const VISION_MODEL = process.env.OPENROUTER_VISION_MODEL || process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
+
+function providerConfigured() {
+  return Boolean(process.env.OPENROUTER_API_KEY);
+}
+
+function noProviderResponse(res) {
+  return res.status(503).json({
+    error: 'No OCR/AI provider configured. Set OPENROUTER_API_KEY to enable menu image extraction.',
+    code: 'NO_PROVIDER_CONFIGURED',
+  });
+}
+
+function parseJsonResponse(content) {
+  const stripped = String(content || '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
   }
-  return Math.abs(h);
 }
 
-const MENU_TREE = [
-  {
-    id: 'breakfast',
-    name: 'Breakfast Menu',
-    categories: [
-      {
-        id: 'eggs', name: 'Eggs & Omelets', dishes: [
-          { id: 'd1', name: 'Classic Eggs Benedict', price: 14.50 },
-          { id: 'd2', name: 'Smoked Salmon Omelet', price: 16.75 },
-          { id: 'd3', name: 'Veggie Frittata', price: 12.25 },
-        ],
-      },
-      {
-        id: 'pancakes', name: 'Pancakes & Waffles', dishes: [
-          { id: 'd4', name: 'Buttermilk Pancakes', price: 11.00 },
-          { id: 'd5', name: 'Belgian Waffle', price: 12.50 },
-          { id: 'd6', name: 'Blueberry Stack', price: 13.25 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'lunch',
-    name: 'Lunch Menu',
-    categories: [
-      {
-        id: 'sandwiches', name: 'Sandwiches', dishes: [
-          { id: 'd7', name: 'Grilled Chicken Club', price: 15.50 },
-          { id: 'd8', name: 'Caprese Panini', price: 13.00 },
-          { id: 'd9', name: 'Reuben on Rye', price: 16.25 },
-        ],
-      },
-      {
-        id: 'salads', name: 'Salads', dishes: [
-          { id: 'd10', name: 'Caesar Salad', price: 11.75 },
-          { id: 'd11', name: 'Cobb Salad', price: 14.50 },
-          { id: 'd12', name: 'Quinoa Power Bowl', price: 13.50 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'dinner',
-    name: 'Dinner Menu',
-    categories: [
-      {
-        id: 'pasta', name: 'Pasta', dishes: [
-          { id: 'd13', name: 'Truffle Mushroom Risotto', price: 24.00 },
-          { id: 'd14', name: 'Linguine alle Vongole', price: 26.50 },
-          { id: 'd15', name: 'Lobster Ravioli', price: 32.00 },
-        ],
-      },
-      {
-        id: 'mains', name: 'Mains', dishes: [
-          { id: 'd16', name: 'Ribeye Steak 14oz', price: 42.00 },
-          { id: 'd17', name: 'Pan-Seared Sea Bass', price: 36.50 },
-          { id: 'd18', name: 'Duck Confit', price: 34.75 },
-          { id: 'd19', name: 'Roasted Lamb Shank', price: 38.00 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'desserts',
-    name: 'Desserts',
-    categories: [
-      {
-        id: 'cakes', name: 'Cakes & Tarts', dishes: [
-          { id: 'd20', name: 'Tiramisu', price: 9.50 },
-          { id: 'd21', name: 'Chocolate Lava Cake', price: 10.25 },
-          { id: 'd22', name: 'Lemon Tart', price: 8.75 },
-        ],
-      },
-    ],
-  },
-];
+async function extractMenuFromImage(base64Data, mimeType) {
+  const response = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'HTTP-Referer': 'http://localhost:3000',
+      'X-Title': 'AI Menu Digitizer',
+    },
+    body: JSON.stringify({
+      model: VISION_MODEL,
+      temperature: 0.2,
+      max_tokens: 10000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: mimeType, data: base64Data },
+            },
+            {
+              type: 'text',
+              text: 'Extract all menu items from this image. Return JSON: { "restaurant_name": string|null, "items": [{ "name": string, "description": string, "price": number|null, "category": string, "is_vegetarian": boolean, "is_vegan": boolean, "is_gluten_free": boolean }] }',
+            },
+          ],
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
 
-function popularityFor(name) {
-  // Stable simulated order count: 40..540
-  return 40 + (hash(name) % 500);
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || data.error) {
+    const message = data?.error?.message || `OpenRouter request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return { content: data.choices?.[0]?.message?.content || '', model: data.model || VISION_MODEL };
 }
 
-function popularityBadge(orderCount) {
-  if (orderCount >= 400) return 'hot';
-  if (orderCount >= 250) return 'popular';
-  if (orderCount >= 150) return 'steady';
-  return 'slow';
-}
-
+// ---------------------------------------------------------------------------
 // GET /api/custom-views/menu-tree
-router.get('/menu-tree', (req, res) => {
-  const sections = MENU_TREE.map((section) => ({
-    id: section.id,
-    name: section.name,
-    categories: section.categories.map((cat) => ({
-      id: cat.id,
-      name: cat.name,
-      dishes: cat.dishes.map((d) => {
-        const orderCount = popularityFor(d.name);
-        return {
-          id: d.id,
-          name: d.name,
-          price: d.price,
-          orderCount,
-          badge: popularityBadge(orderCount),
-        };
-      }),
-    })),
-  }));
-  res.json({
-    generatedAt: new Date().toISOString(),
-    totalSections: sections.length,
-    totalDishes: sections.reduce((n, s) => n + s.categories.reduce((m, c) => m + c.dishes.length, 0), 0),
-    sections,
-  });
-});
+// Hierarchical menu structure computed from the user's menus and menu items.
+// ---------------------------------------------------------------------------
 
-// GET /api/custom-views/dish-popularity?limit=15
-router.get('/dish-popularity', (req, res) => {
-  const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 15));
-  const all = [];
-  MENU_TREE.forEach((s) => s.categories.forEach((c) => c.dishes.forEach((d) => {
-    all.push({
-      id: d.id,
-      name: d.name,
-      section: s.name,
-      category: c.name,
-      price: d.price,
-      orderCount: popularityFor(d.name),
+router.get('/menu-tree', async (req, res) => {
+  try {
+    const menusResult = await pool.query(
+      'SELECT id, name, restaurant_name FROM menus WHERE user_id = $1 ORDER BY name',
+      [req.userId]
+    );
+    const itemsResult = await pool.query(
+      `SELECT mi.id, mi.menu_id, mi.name, mi.price, mi.category
+       FROM menu_items mi
+       JOIN menus m ON mi.menu_id = m.id
+       WHERE m.user_id = $1
+       ORDER BY mi.category, mi.name`,
+      [req.userId]
+    );
+
+    const categoriesByMenu = new Map();
+    for (const item of itemsResult.rows) {
+      if (!categoriesByMenu.has(item.menu_id)) categoriesByMenu.set(item.menu_id, new Map());
+      const categories = categoriesByMenu.get(item.menu_id);
+      const categoryName = item.category || 'Uncategorized';
+      if (!categories.has(categoryName)) categories.set(categoryName, []);
+      categories.get(categoryName).push({
+        id: item.id,
+        name: item.name,
+        price: item.price != null ? Number(item.price) : null,
+      });
+    }
+
+    const sections = menusResult.rows.map((menu) => {
+      const categories = categoriesByMenu.get(menu.id) || new Map();
+      return {
+        id: menu.id,
+        name: menu.name,
+        subtitle: menu.restaurant_name || null,
+        categories: [...categories.entries()].map(([name, dishes]) => ({
+          id: `${menu.id}:${name}`,
+          name,
+          dishes,
+        })),
+      };
     });
-  })));
-  all.sort((a, b) => b.orderCount - a.orderCount);
-  const top = all.slice(0, limit);
-  res.json({
-    generatedAt: new Date().toISOString(),
-    limit,
-    totalConsidered: all.length,
-    dishes: top,
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      totalSections: sections.length,
+      totalDishes: sections.reduce((n, s) => n + s.categories.reduce((m, c) => m + c.dishes.length, 0), 0),
+      sections,
+    });
+  } catch (error) {
+    console.error('menu-tree error:', error);
+    res.status(500).json({ error: 'Failed to build menu tree' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/custom-views/dish-popularity
+// Order counts require an order/POS data source; none is connected to this
+// application, so the endpoint states that instead of inventing numbers.
+// ---------------------------------------------------------------------------
+
+router.get('/dish-popularity', (req, res) => {
+  res.status(503).json({
+    error: 'Dish popularity requires order data from a connected POS/order source. No order data source is configured.',
+    code: 'NO_ORDER_DATA_SOURCE',
+    required: 'Connect a POS/order data integration to compute order counts.',
   });
 });
 
-// ====================================================================
-// Custom Feature #3 — MENU PDF EXPORT
-// ====================================================================
+// ---------------------------------------------------------------------------
+// GET /api/custom-views/menus — real menus for the PDF export picker.
+// ---------------------------------------------------------------------------
 
-const RESTAURANTS = [
-  { id: 'rest-bistro',   name: 'The Bistro Downtown',     cuisine: 'European' },
-  { id: 'rest-harbor',   name: 'Harbor Seafood House',     cuisine: 'Seafood'  },
-  { id: 'rest-trattoria',name: 'Trattoria Bella',          cuisine: 'Italian'  },
-  { id: 'rest-garden',   name: 'The Garden Cafe',          cuisine: 'American' },
-];
+router.get('/menus', async (req, res) => {
+  try {
+    const menusResult = await pool.query(
+      `SELECT m.id, m.name, m.restaurant_name, m.description, COUNT(mi.id)::int AS item_count
+       FROM menus m
+       LEFT JOIN menu_items mi ON mi.menu_id = m.id
+       WHERE m.user_id = $1
+       GROUP BY m.id
+       ORDER BY m.name`,
+      [req.userId]
+    );
+    const itemsResult = await pool.query(
+      `SELECT mi.id, mi.menu_id, mi.name, mi.description, mi.price, mi.category
+       FROM menu_items mi
+       JOIN menus m ON mi.menu_id = m.id
+       WHERE m.user_id = $1
+       ORDER BY mi.category, mi.name`,
+      [req.userId]
+    );
 
-const DISH_DESCRIPTIONS = {
-  'Classic Eggs Benedict': 'Two poached eggs on toasted English muffin, Canadian bacon, hollandaise.',
-  'Smoked Salmon Omelet': 'Three-egg omelet with cold-smoked salmon, dill cream cheese, chives.',
-  'Veggie Frittata': 'Open-faced frittata with seasonal vegetables and aged gruyere.',
-  'Buttermilk Pancakes': 'Stack of three fluffy pancakes with warm maple syrup and butter.',
-  'Belgian Waffle': 'Crisp Liege-style waffle with powdered sugar and fresh berries.',
-  'Blueberry Stack': 'Wild blueberry pancakes with vanilla cream and lemon zest.',
-  'Grilled Chicken Club': 'Triple-stacked club with grilled chicken, bacon, lettuce, tomato, avocado.',
-  'Caprese Panini': 'Fresh mozzarella, tomato, basil, and balsamic glaze on toasted ciabatta.',
-  'Reuben on Rye': 'House-cured corned beef, sauerkraut, Swiss, Russian dressing on rye.',
-  'Caesar Salad': 'Crisp romaine, parmigiano-reggiano, focaccia croutons, anchovy dressing.',
-  'Cobb Salad': 'Chicken, bacon, blue cheese, avocado, egg, tomato on mixed greens.',
-  'Quinoa Power Bowl': 'Tri-color quinoa, roasted chickpeas, kale, tahini-lemon dressing.',
-  'Truffle Mushroom Risotto': 'Carnaroli rice, wild mushrooms, black truffle, parmigiano.',
-  'Linguine alle Vongole': 'Fresh linguine with Manila clams, white wine, garlic, chili flake.',
-  'Lobster Ravioli': 'Hand-cut ravioli filled with Maine lobster in saffron cream sauce.',
-  'Ribeye Steak 14oz': 'Dry-aged USDA prime ribeye with bone marrow butter and roasted shallots.',
-  'Pan-Seared Sea Bass': 'Crispy-skin sea bass with fennel puree and citrus beurre blanc.',
-  'Duck Confit': 'Slow-cooked duck leg with lentils du Puy and cherry gastrique.',
-  'Roasted Lamb Shank': 'Braised lamb shank with rosemary jus, polenta, gremolata.',
-  'Tiramisu': 'Classic mascarpone tiramisu with espresso-soaked ladyfingers.',
-  'Chocolate Lava Cake': 'Warm flourless chocolate cake with molten center, vanilla bean ice cream.',
-  'Lemon Tart': 'Buttery sable crust filled with Meyer lemon curd, torched meringue.',
-};
+    const itemsByMenu = new Map();
+    for (const item of itemsResult.rows) {
+      if (!itemsByMenu.has(item.menu_id)) itemsByMenu.set(item.menu_id, []);
+      itemsByMenu.get(item.menu_id).push({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        price: item.price != null ? Number(item.price) : null,
+        category: item.category || 'Uncategorized',
+      });
+    }
 
-function describe(name) {
-  return DISH_DESCRIPTIONS[name] || 'Chef-crafted house specialty made with seasonal ingredients.';
-}
-
-// GET /api/custom-views/restaurants — list for the picker
-router.get('/restaurants', (req, res) => {
-  res.json({ restaurants: RESTAURANTS });
+    res.json({
+      menus: menusResult.rows.map((menu) => ({
+        id: menu.id,
+        name: menu.name,
+        restaurant_name: menu.restaurant_name,
+        item_count: menu.item_count,
+        items: itemsByMenu.get(menu.id) || [],
+      })),
+    });
+  } catch (error) {
+    console.error('custom-views menus error:', error);
+    res.status(500).json({ error: 'Failed to load menus' });
+  }
 });
 
-// Style themes for PDF rendering
+// ---------------------------------------------------------------------------
+// POST /api/custom-views/menu-pdf — styled PDF of one real menu.
+// Body: { menuId, style: 'Classic'|'Modern'|'Minimalist', paper: 'A4'|'Letter' }
+// ---------------------------------------------------------------------------
+
 const STYLES = {
   Classic: {
     title:    { font: 'Times-Bold',   size: 28, color: '#7c2d12' },
@@ -249,155 +262,181 @@ const STYLES = {
 
 const PAPER_SIZES = { A4: 'A4', Letter: 'LETTER' };
 
-// POST /api/custom-views/menu-pdf
-// Body: { restaurantId, style: 'Classic'|'Modern'|'Minimalist', paper: 'A4'|'Letter' }
-router.post('/menu-pdf', (req, res) => {
-  const body = req.body || {};
-  const restaurantId = body.restaurantId || RESTAURANTS[0].id;
-  const styleKey = STYLES[body.style] ? body.style : 'Classic';
-  const paperKey = PAPER_SIZES[body.paper] ? body.paper : 'A4';
-  const style = STYLES[styleKey];
-  const restaurant = RESTAURANTS.find((r) => r.id === restaurantId) || RESTAURANTS[0];
+router.post('/menu-pdf', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const menuId = Number.parseInt(body.menuId, 10);
+    if (!Number.isSafeInteger(menuId) || menuId <= 0) {
+      return res.status(400).json({ error: 'menuId is required' });
+    }
 
-  const doc = new PDFDocument({ size: PAPER_SIZES[paperKey], margin: 50 });
-  res.setHeader('Content-Type', 'application/pdf');
-  const filename = `menu-${restaurant.id}-${styleKey.toLowerCase()}-${paperKey.toLowerCase()}.pdf`;
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  doc.pipe(res);
+    const menuResult = await pool.query(
+      'SELECT id, name, restaurant_name, description FROM menus WHERE id = $1 AND user_id = $2',
+      [menuId, req.userId]
+    );
+    if (!menuResult.rows[0]) {
+      return res.status(404).json({ error: 'Menu not found' });
+    }
+    const menu = menuResult.rows[0];
 
-  // Header
-  doc.fillColor(style.title.color).font(style.title.font).fontSize(style.title.size)
-     .text(restaurant.name, { align: 'center' });
-  doc.moveDown(0.2);
-  doc.fillColor(style.subtitle.color).font(style.subtitle.font).fontSize(style.subtitle.size)
-     .text(`${restaurant.cuisine} Cuisine · ${styleKey} Style · ${paperKey}`, { align: 'center' });
-  doc.moveDown(0.6);
+    const itemsResult = await pool.query(
+      'SELECT name, description, price, category FROM menu_items WHERE menu_id = $1 ORDER BY category, name',
+      [menuId]
+    );
+    if (itemsResult.rows.length === 0) {
+      return res.status(422).json({ error: 'Menu has no items to export' });
+    }
 
-  // Accent divider line
-  const headerY = doc.y;
-  doc.moveTo(50, headerY).lineTo(doc.page.width - 50, headerY)
-     .lineWidth(1.2).strokeColor(style.accent).stroke();
-  doc.moveDown(0.8);
+    const styleKey = STYLES[body.style] ? body.style : 'Classic';
+    const paperKey = PAPER_SIZES[body.paper] ? body.paper : 'A4';
+    const style = STYLES[styleKey];
 
-  // Sections / categories / dishes
-  MENU_TREE.forEach((section) => {
-    if (doc.y > doc.page.height - 120) doc.addPage();
+    const doc = new PDFDocument({ size: PAPER_SIZES[paperKey], margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    const filename = `menu-${menu.id}-${styleKey.toLowerCase()}-${paperKey.toLowerCase()}.pdf`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
 
-    doc.fillColor(style.section.color).font(style.section.font).fontSize(style.section.size)
-       .text(section.name.toUpperCase());
-    doc.moveDown(0.3);
+    const title = menu.restaurant_name || menu.name;
+    doc.fillColor(style.title.color).font(style.title.font).fontSize(style.title.size)
+       .text(title, { align: 'center' });
+    doc.moveDown(0.2);
+    doc.fillColor(style.subtitle.color).font(style.subtitle.font).fontSize(style.subtitle.size)
+       .text(`${menu.name} · ${styleKey} Style · ${paperKey}`, { align: 'center' });
+    doc.moveDown(0.6);
 
-    section.categories.forEach((cat) => {
+    const headerY = doc.y;
+    doc.moveTo(50, headerY).lineTo(doc.page.width - 50, headerY)
+       .lineWidth(1.2).strokeColor(style.accent).stroke();
+    doc.moveDown(0.8);
+
+    const categories = new Map();
+    for (const item of itemsResult.rows) {
+      const name = item.category || 'Uncategorized';
+      if (!categories.has(name)) categories.set(name, []);
+      categories.get(name).push(item);
+    }
+
+    for (const [categoryName, dishes] of categories) {
       if (doc.y > doc.page.height - 100) doc.addPage();
 
       doc.fillColor(style.category.color).font(style.category.font).fontSize(style.category.size)
-         .text(cat.name);
+         .text(categoryName);
       doc.moveDown(0.15);
 
-      cat.dishes.forEach((d) => {
+      for (const dish of dishes) {
         if (doc.y > doc.page.height - 70) doc.addPage();
 
         const startY = doc.y;
-        const pageWidth = doc.page.width - 100; // margins
-        const priceText = `$${Number(d.price).toFixed(2)}`;
-        const priceWidth = doc.font(style.price.font).fontSize(style.price.size).widthOfString(priceText);
+        const pageWidth = doc.page.width - 100;
+        const priceText = dish.price != null ? `$${Number(dish.price).toFixed(2)}` : '';
+        const priceWidth = priceText
+          ? doc.font(style.price.font).fontSize(style.price.size).widthOfString(priceText)
+          : 0;
 
-        // Dish name on left
         doc.fillColor(style.dish.color).font(style.dish.font).fontSize(style.dish.size)
-           .text(d.name, 50, startY, { width: pageWidth - priceWidth - 12, continued: false });
+           .text(dish.name, 50, startY, { width: pageWidth - priceWidth - 12, continued: false });
 
-        // Price on right
-        doc.fillColor(style.price.color).font(style.price.font).fontSize(style.price.size)
-           .text(priceText, doc.page.width - 50 - priceWidth, startY);
+        if (priceText) {
+          doc.fillColor(style.price.color).font(style.price.font).fontSize(style.price.size)
+             .text(priceText, doc.page.width - 50 - priceWidth, startY);
+        }
 
-        // Description
-        doc.fillColor(style.desc.color).font(style.desc.font).fontSize(style.desc.size)
-           .text(describe(d.name), 50, doc.y + 2, { width: pageWidth });
+        if (dish.description) {
+          doc.fillColor(style.desc.color).font(style.desc.font).fontSize(style.desc.size)
+             .text(dish.description, 50, doc.y + 2, { width: pageWidth });
+        }
         doc.moveDown(0.4);
 
-        // Light separator
         const sy = doc.y;
         doc.moveTo(50, sy).lineTo(doc.page.width - 50, sy)
            .lineWidth(0.4).strokeColor(style.divider).stroke();
         doc.moveDown(0.3);
-      });
+      }
 
       doc.moveDown(0.2);
-    });
+    }
 
-    doc.moveDown(0.4);
-  });
+    doc.fillColor(style.subtitle.color).font(style.subtitle.font).fontSize(9)
+       .text(`Generated ${new Date().toISOString().slice(0, 10)} — AI Menu Digitizer`,
+             50, doc.page.height - 40, { align: 'center', width: doc.page.width - 100 });
 
-  // Footer
-  doc.fillColor(style.subtitle.color).font(style.subtitle.font).fontSize(9)
-     .text(`Generated ${new Date().toISOString().slice(0, 10)} — AI Menu Digitizer`,
-           50, doc.page.height - 40, { align: 'center', width: doc.page.width - 100 });
-
-  doc.end();
+    doc.end();
+  } catch (error) {
+    console.error('menu-pdf error:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to generate menu PDF' });
+  }
 });
 
-// ====================================================================
-// Custom Feature #4 — OCR MENU IMAGE UPLOAD (mock)
-// ====================================================================
+// ---------------------------------------------------------------------------
+// POST /api/custom-views/menu-ocr (multipart field "image")
+// Real provider-backed extraction. No provider -> 503; unparseable provider
+// output -> 502. Dishes/prices are never synthesized locally.
+// ---------------------------------------------------------------------------
 
-// POST /api/custom-views/menu-ocr  (multipart: field "image")
-// Returns deterministic-mock parsed menu structure derived from file size/name.
-router.post('/menu-ocr', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No image uploaded (expected multipart field "image").' });
+router.post('/menu-ocr', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image uploaded (expected multipart field "image").' });
+    }
+    if (!providerConfigured()) {
+      return noProviderResponse(res);
+    }
+
+    const mimeType = req.file.mimetype || 'image/jpeg';
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mimeType)) {
+      return res.status(415).json({ error: `Unsupported image type: ${mimeType}. Use PNG, JPEG, WebP or GIF.` });
+    }
+
+    const result = await extractMenuFromImage(req.file.buffer.toString('base64'), mimeType);
+    const parsed = parseJsonResponse(result.content);
+    if (!parsed || !Array.isArray(parsed.items)) {
+      return res.status(502).json({
+        error: 'The AI provider did not return a parseable menu extraction. Try a clearer image or retry.',
+        code: 'UNPARSEABLE_PROVIDER_RESPONSE',
+      });
+    }
+
+    const items = parsed.items
+      .filter((item) => item && typeof item.name === 'string' && item.name.trim())
+      .map((item) => ({
+        name: item.name.trim(),
+        description: typeof item.description === 'string' ? item.description : '',
+        price: Number.isFinite(Number(item.price)) ? Number(item.price) : null,
+        category: typeof item.category === 'string' && item.category.trim() ? item.category.trim() : 'Uncategorized',
+        is_vegetarian: Boolean(item.is_vegetarian ?? item.dietary_flags?.vegetarian),
+        is_vegan: Boolean(item.is_vegan ?? item.dietary_flags?.vegan),
+        is_gluten_free: Boolean(item.is_gluten_free ?? item.dietary_flags?.gluten_free),
+      }));
+
+    if (items.length === 0) {
+      return res.status(422).json({
+        error: 'No menu items were found in this image. Upload a clearer photo of the menu.',
+        code: 'NO_ITEMS_EXTRACTED',
+      });
+    }
+
+    const sectionsByName = new Map();
+    for (const item of items) {
+      if (!sectionsByName.has(item.category)) sectionsByName.set(item.category, []);
+      sectionsByName.get(item.category).push(item);
+    }
+
+    res.json({
+      file: { name: req.file.originalname, size: req.file.size, mimetype: mimeType },
+      restaurant_name: typeof parsed.restaurant_name === 'string' ? parsed.restaurant_name : null,
+      items,
+      parsed_sections: [...sectionsByName.entries()].map(([name, dishes]) => ({ name, dishes })),
+      confidence: null,
+      provider: 'openrouter',
+      model: result.model,
+      generatedAt: new Date().toISOString(),
+      note: `Extracted by ${result.model}. Review dishes and prices before importing or publishing.`,
+    });
+  } catch (error) {
+    console.error('menu-ocr error:', error);
+    if (!res.headersSent) res.status(502).json({ error: `Menu image extraction failed: ${error.message}` });
   }
-
-  const file = req.file;
-  const seed = hash((file.originalname || 'menu') + ':' + file.size);
-
-  // Deterministic mock: 2 sections, 2-3 dishes each, derived from seed.
-  const SECTION_POOL = [
-    { name: 'Starters', dishes: [
-      { name: 'Burrata with Heirloom Tomatoes', price: 14.50, description: 'Creamy burrata, balsamic reduction, basil oil.' },
-      { name: 'Crispy Calamari', price: 13.25, description: 'Lightly fried calamari with lemon-aioli.' },
-      { name: 'Garlic Shrimp Tapas', price: 15.00, description: 'Sauteed shrimp in garlic-butter sauce.' },
-    ]},
-    { name: 'Main Courses', dishes: [
-      { name: 'Pan-Seared Salmon', price: 26.75, description: 'Atlantic salmon with lemon-dill beurre blanc.' },
-      { name: 'Filet Mignon 8oz', price: 38.50, description: '8oz center-cut filet, red wine demi-glace.' },
-      { name: 'Wild Mushroom Pappardelle', price: 22.00, description: 'House-made pasta, wild mushrooms, truffle oil.' },
-    ]},
-    { name: 'Desserts', dishes: [
-      { name: 'Creme Brulee', price: 9.75, description: 'Classic vanilla bean creme brulee.' },
-      { name: 'Flourless Chocolate Torte', price: 10.50, description: 'Dark chocolate torte, raspberry coulis.' },
-    ]},
-    { name: 'Beverages', dishes: [
-      { name: 'House Red Wine', price: 12.00, description: 'Glass of house Cabernet Sauvignon.' },
-      { name: 'Espresso Martini', price: 14.50, description: 'Vodka, espresso, coffee liqueur.' },
-    ]},
-  ];
-
-  // Pick 2 sections deterministically.
-  const idxA = seed % SECTION_POOL.length;
-  const idxB = (seed >> 3) % SECTION_POOL.length;
-  const picks = idxA === idxB
-    ? [SECTION_POOL[idxA], SECTION_POOL[(idxA + 1) % SECTION_POOL.length]]
-    : [SECTION_POOL[idxA], SECTION_POOL[idxB]];
-
-  const parsed_sections = picks.map((sec, i) => ({
-    name: sec.name,
-    dishes: sec.dishes.slice(0, 2 + ((seed >> (i * 2)) & 1)),
-  }));
-
-  // Confidence: 0.72 .. 0.96 deterministic
-  const confidence = Math.round((0.72 + ((seed % 240) / 1000)) * 1000) / 1000;
-
-  res.json({
-    file: {
-      name: file.originalname,
-      size: file.size,
-      mimetype: file.mimetype,
-    },
-    confidence,
-    parsed_sections,
-    generatedAt: new Date().toISOString(),
-    note: 'Mock OCR — pattern matches deterministic seed of filename+size.',
-  });
 });
 
 module.exports = router;

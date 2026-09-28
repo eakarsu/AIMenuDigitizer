@@ -13,12 +13,15 @@ import {
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
-  getPublicMenu
+  getPublicMenu,
+  setMenuPublication
 } from '../controllers/menuController';
 
 const router = Router();
 
-// Public QR menu page — no authentication required
+// Public QR menu page — no authentication required. Only menus explicitly
+// published through POST /:id/publication are served to anonymous visitors;
+// the owner may preview a private menu with a valid session token.
 router.get('/:id/public', getPublicMenu as any);
 
 // Protected menu CRUD
@@ -29,6 +32,9 @@ router.put('/bulk', authenticateToken, authorize('admin', 'manager'), bulkUpdate
 router.post('/', authenticateToken, authorize('admin', 'manager'), createMenu as any);
 router.put('/:id', authenticateToken, authorize('admin', 'manager'), updateMenu as any);
 router.delete('/:id', authenticateToken, authorize('admin', 'manager'), deleteMenu as any);
+
+// Publication gate — only authorised operators may expose a menu publicly
+router.post('/:id/publication', authenticateToken, authorize('admin', 'manager'), setMenuPublication as any);
 
 // Menu item CRUD
 router.get('/:menuId/items/:itemId', authenticateToken, getMenuItem as any);
