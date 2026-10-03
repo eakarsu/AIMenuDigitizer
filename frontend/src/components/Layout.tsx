@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import './AppSidebar.css';
 import {
   Home,
   Menu,
@@ -27,6 +29,7 @@ import {
 export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const [sidebarQuery, setSidebarQuery] = useState('');
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
@@ -44,13 +47,25 @@ export default function Layout() {
     { name: 'Staff', href: '/staff', icon: Users },
     { name: 'Costs', href: '/ingredient-costs', icon: DollarSign },
     { name: 'AI Cost Analysis', href: '/ai-cost-analysis', icon: Calculator },
+    { name: 'Plate Margin Reprice', href: '/plate-margin-reprice', icon: DollarSign },
     { name: 'Integrations', href: '/integrations', icon: Plug },
     { name: 'Menu Analytics', href: '/custom-views', icon: PieChart },
     { name: 'Settings', href: '/settings', icon: Settings },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 codex-nav-shell">
+      <aside className="codex-side" aria-label="Application navigation">
+        <div className="codex-side-brand"><strong>AI Menu Digitizer</strong><span>Workspace</span></div>
+        <label className="codex-side-search-label" htmlFor="codex-side-search">Find a section</label>
+        <input id="codex-side-search" className="codex-side-search" type="search" value={sidebarQuery} onChange={event => setSidebarQuery(event.target.value)} placeholder="Search navigation" />
+        <nav className="codex-side-links" aria-label="Sections">
+          {navigation.filter(item => item.name.toLowerCase().includes(sidebarQuery.toLowerCase().trim())).map(item => {
+            const Icon = item.icon;
+            return <Link key={item.href} to={item.href} className={`codex-side-link${location.pathname === item.href ? ' active' : ''}`}><Icon className="h-4 w-4 inline mr-2" />{item.name}</Link>;
+          })}
+        </nav>
+      </aside>
       {/* Top Navigation */}
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
