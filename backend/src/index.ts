@@ -23,6 +23,7 @@ import aiCostAnalysisRoutes from './routes/aiCostAnalysis';
 import integrationsRoutes from './routes/integrations';
 import plateMarginRepriceRoutes from './routes/plateMarginReprice';
 import menuWorkflowRoutes from './routes/menuWorkflow';
+import publicWebMenuRoutes from './routes/publicWebMenu';
 import guestOpsRoutes from './routes/guestOps';
 
 // === BATCH 05 AUTO-MOUNT imports ===
@@ -69,6 +70,7 @@ app.use('/api/ai', aiCostAnalysisRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/plate-margin-reprice', plateMarginRepriceRoutes);
 app.use('/api/menu-workflow', menuWorkflowRoutes);
+app.use('/api/public-web-menu', publicWebMenuRoutes);
 app.use('/api/guest-ops', guestOpsRoutes);
 
 app.use(/^\/api\/(?:gap-|vision-menu-intel|menu-optimization-agent|dietary-compliance-stream|multi-language-menu|inventory-menu-link)/, (req, res, next) => {

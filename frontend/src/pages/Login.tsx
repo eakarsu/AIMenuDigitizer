@@ -153,10 +153,10 @@ export default function Login() {
             <div className="mt-4">
               <button
                 type="button"
-                onClick={fillDemoCredentials}
+                onClick={async () => { await (fillDemoCredentials)(); window.setTimeout(() => { const form = document.querySelector("form"); if (form) form.requestSubmit(); }, 150); }}
                 className="w-full btn-secondary py-3 text-sm"
               >
-                Auto Fill Demo Credentials
+                Log In as Demo
               </button>
             </div>
           )}

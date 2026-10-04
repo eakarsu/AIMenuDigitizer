@@ -25,6 +25,8 @@ import IngredientCostsPage from './pages/IngredientCostsPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import AICostAnalysisPage from './pages/AICostAnalysisPage';
 import PlateMarginRepricePage from './pages/PlateMarginRepricePage';
+import GovernedMenuWorkflow from './pages/GovernedMenuWorkflow';
+import GovernedPublicWebMenu from './pages/GovernedPublicWebMenu';
 // @ts-ignore — JS module
 import CustomViewsPage from './pages/CustomViewsPage';
 import Layout from './components/Layout';
@@ -69,6 +71,7 @@ function App() {
               <Route path="/verify-email/:token" element={<VerifyEmail />} />
               {/* Public QR menu page — no authentication required */}
               <Route path="/menu/:id/view" element={<PublicMenuPage />} />
+              <Route path="/web-menu/:token" element={<GovernedPublicWebMenu />} />
               <Route
                 path="/"
                 element={
@@ -79,6 +82,7 @@ function App() {
               >
                 <Route index element={<Dashboard />} />
                 <Route path="menu/:id" element={<MenuDetail />} />
+                <Route path="governed-menu" element={<GovernedMenuWorkflow />} />
                 <Route path="allergens" element={<AllergensPage />} />
                 <Route path="calories" element={<CaloriesPage />} />
                 <Route path="translations" element={<TranslationsPage />} />

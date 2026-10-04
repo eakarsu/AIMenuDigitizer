@@ -33,6 +33,7 @@ export default function Layout() {
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
+    { name: 'Governed Menu', href: '/governed-menu', icon: Shield },
     { name: 'Allergens', href: '/allergens', icon: AlertTriangle },
     { name: 'Nutrition', href: '/nutrition-healthcare', icon: Heart },
     { name: 'Calories', href: '/calories', icon: Flame },
