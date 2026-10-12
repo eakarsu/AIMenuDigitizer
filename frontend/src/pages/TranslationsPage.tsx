@@ -10,10 +10,10 @@ import {
   Loader2,
   Globe,
   Save,
-  Check,
-  Sparkles
+  Check
 } from 'lucide-react';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import { useToast } from '../context/ToastContext';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
@@ -46,6 +46,12 @@ interface Language {
   code: string;
   name: string;
 }
+
+const TRANSLATION_PRESETS = [
+  { name: 'Italian entrée', values: { itemName: 'Chicken Tikka Masala', description: 'Yogurt-marinated chicken in a creamy tomato curry with basmati rice and naan.' } },
+  { name: 'Vegan lunch', values: { itemName: 'Roasted Vegetable Bowl', description: 'Quinoa, chickpeas, roasted peppers, zucchini, spinach, and lemon tahini dressing.' } },
+  { name: 'Seafood special', values: { itemName: 'Grilled Sea Bass', description: 'Sea bass with saffron potatoes, braised fennel, citrus beurre blanc, and fresh herbs.' } },
+];
 
 export default function TranslationsPage() {
   const { addToast } = useToast();
@@ -627,21 +633,15 @@ export default function TranslationsPage() {
                 <div className="flex-1 border-t border-gray-200"></div>
               </div>
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setAIInput({
-                    itemName: 'Chicken Tikka Masala',
-                    description: 'Tender chicken pieces marinated in yogurt and spices, cooked in a rich creamy tomato-based curry sauce with aromatic spices. Served with basmati rice and warm naan bread.',
-                    targetLanguage: 'Spanish',
-                    menuItemId: aiInput.menuItemId
-                  })}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Load Sample Data
-                </button>
-              </div>
+              <AIPresetButtons
+                presets={TRANSLATION_PRESETS}
+                disabled={aiLoading || languages.length === 0}
+                onSelect={(values, index) => setAIInput({
+                  ...values,
+                  targetLanguage: languages[index % languages.length]?.name || aiInput.targetLanguage,
+                  menuItemId: aiInput.menuItemId,
+                })}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Food Item Name *</label>

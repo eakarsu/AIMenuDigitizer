@@ -10,10 +10,10 @@ import {
   Loader2,
   Activity,
   Save,
-  Check,
-  Sparkles
+  Check
 } from 'lucide-react';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import { useToast } from '../context/ToastContext';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
@@ -45,6 +45,12 @@ interface Nutrition {
   sugar: string;
   serving_size: string;
 }
+
+const CALORIE_PRESETS = [
+  { name: 'Salmon dinner', values: { itemName: 'Grilled Salmon Plate', description: 'Six-ounce salmon fillet with lemon butter, one cup wild rice pilaf, roasted vegetables, dill, and capers.' } },
+  { name: 'Vegan grain bowl', values: { itemName: 'Roasted Chickpea Bowl', description: 'One cup quinoa, roasted chickpeas, kale, sweet potato, avocado, pumpkin seeds, and two tablespoons tahini dressing.' } },
+  { name: 'Brunch pancakes', values: { itemName: 'Lemon Ricotta Pancakes', description: 'Three six-inch ricotta pancakes with blueberry compote, two tablespoons maple syrup, whipped butter, and fresh berries.' } },
+];
 
 export default function CaloriesPage() {
   const { addToast } = useToast();
@@ -644,20 +650,11 @@ export default function CaloriesPage() {
                 <div className="flex-1 border-t border-gray-200"></div>
               </div>
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setAIInput({
-                    itemName: 'Grilled Salmon',
-                    description: 'Atlantic salmon fillet grilled with lemon butter sauce, served with roasted seasonal vegetables and wild rice pilaf. Garnished with fresh dill and capers.',
-                    menuItemId: aiInput.menuItemId
-                  })}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Load Sample Data
-                </button>
-              </div>
+              <AIPresetButtons
+                presets={CALORIE_PRESETS}
+                disabled={aiLoading}
+                onSelect={(values) => setAIInput({ ...values, menuItemId: aiInput.menuItemId })}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Food Item Name *</label>

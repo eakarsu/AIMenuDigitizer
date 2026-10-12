@@ -9,10 +9,10 @@ import {
   Brain,
   Loader2,
   Save,
-  Check,
-  Sparkles
+  Check
 } from 'lucide-react';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import { useToast } from '../context/ToastContext';
 import SearchBar from '../components/SearchBar';
 import Pagination from '../components/Pagination';
@@ -39,6 +39,12 @@ interface Allergen {
   category: string;
   created_at?: string;
 }
+
+const ALLERGEN_PRESETS = [
+  { name: 'Italian pasta', values: { itemName: 'Spaghetti Carbonara', description: 'Spaghetti with egg, pecorino romano, guanciale, black pepper, parmesan, and garlic bread.' } },
+  { name: 'Thai curry', values: { itemName: 'Thai Peanut Curry', description: 'Coconut curry with peanut sauce, tofu, soy sauce, mixed vegetables, lime, and jasmine rice.' } },
+  { name: 'Vegan dessert', values: { itemName: 'Dark Chocolate Tart', description: 'Almond crust, dark chocolate ganache made with coconut cream, hazelnut praline, and fresh berries.' } },
+];
 
 export default function AllergensPage() {
   const { addToast } = useToast();
@@ -587,20 +593,11 @@ export default function AllergensPage() {
                 <div className="flex-1 border-t border-gray-200"></div>
               </div>
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setAIInput({
-                    itemName: 'Spaghetti Carbonara',
-                    description: 'Classic Italian pasta with eggs, pecorino romano cheese, guanciale, black pepper, and spaghetti noodles. Topped with parmesan and served with garlic bread.',
-                    menuItemId: aiInput.menuItemId
-                  })}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Load Sample Data
-                </button>
-              </div>
+              <AIPresetButtons
+                presets={ALLERGEN_PRESETS}
+                disabled={aiLoading}
+                onSelect={(values) => setAIInput({ ...values, menuItemId: aiInput.menuItemId })}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Food Item Name *</label>

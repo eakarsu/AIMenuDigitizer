@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { menuApi, aiApi } from '../services/api';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import {
   Sparkles,
   Loader2,
@@ -34,6 +35,12 @@ interface Recommendation {
   budget_range: string;
   created_at: string;
 }
+
+const RECOMMENDATION_PRESETS = [
+  { name: 'Spicy dinner', values: { preferences: 'Bold, spicy, savory dishes with grilled meat or seafood and bright citrus flavors.', dietaryRestrictions: 'Gluten-Free', mealType: 'Dinner', budget: 'Moderate' } },
+  { name: 'Vegan lunch', values: { preferences: 'Fresh vegetables, legumes, crunchy textures, herbs, and light sauces; avoid overly sweet dishes.', dietaryRestrictions: 'Vegan, Nut-Free', mealType: 'Lunch', budget: 'Budget-friendly' } },
+  { name: 'Premium brunch', values: { preferences: 'Refined brunch dishes with seafood, eggs, seasonal produce, and balanced savory flavors.', dietaryRestrictions: 'Dairy-Free', mealType: 'Brunch', budget: 'Premium' } },
+];
 
 export default function DishRecommenderPage() {
   const { addToast } = useToast();
@@ -276,19 +283,16 @@ export default function DishRecommenderPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setPreferences('I love spicy food with bold flavors, prefer savory over sweet. Enjoy grilled meats and fresh seafood.');
-                setDietaryRestrictions('Gluten-Free');
-                setMealType('Dinner');
-                setBudget('Moderate');
+            <AIPresetButtons
+              presets={RECOMMENDATION_PRESETS}
+              disabled={analyzing}
+              onSelect={(values) => {
+                setPreferences(values.preferences);
+                setDietaryRestrictions(values.dietaryRestrictions);
+                setMealType(values.mealType);
+                setBudget(values.budget);
               }}
-              className="w-full mb-3 inline-flex items-center justify-center gap-1 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-            >
-              <Sparkles className="h-4 w-4" />
-              Load Sample Data
-            </button>
+            />
 
             <button
               onClick={handleGetRecommendations}

@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { menuApi, aiApi } from '../services/api';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import {
   DollarSign,
   TrendingUp,
   Loader2,
   ChevronDown,
   Trash2,
-  Eye,
-  Sparkles
+  Eye
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -46,6 +46,12 @@ interface PriceSuggestion {
   demand_level: string;
   created_at: string;
 }
+
+const PRICE_PRESETS = [
+  { name: 'First menu item', values: 0 },
+  { name: 'Second menu item', values: 1 },
+  { name: 'Third menu item', values: 2 },
+];
 
 export default function PriceOptimizerPage() {
   const { addToast } = useToast();
@@ -238,19 +244,15 @@ export default function PriceOptimizerPage() {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                if (selectedMenu?.items && selectedMenu.items.length > 0) {
-                  setSelectedItem(selectedMenu.items[0]);
-                }
+            <AIPresetButtons
+              presets={PRICE_PRESETS}
+              disabled={analyzing || !selectedMenu?.items?.length}
+              description="Each example selects a real item from the current menu; the item name, description, price, category, and reference ID remain source-backed."
+              onSelect={(itemIndex) => {
+                const menuItems = selectedMenu?.items || [];
+                setSelectedItem(menuItems[itemIndex % menuItems.length] || null);
               }}
-              disabled={!selectedMenu?.items?.length}
-              className="w-full mb-3 inline-flex items-center justify-center gap-1 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-            >
-              <Sparkles className="h-4 w-4" />
-              Load Sample Data
-            </button>
+            />
 
             <button
               onClick={handleAnalyzePrice}

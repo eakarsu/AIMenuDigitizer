@@ -1,3 +1,4 @@
+import FormattedAIReport from "../components/FormattedAIReport";
 import { useEffect, useState } from 'react';
 import { ingredientsApi } from '../services/api';
 import { DollarSign } from 'lucide-react';
@@ -46,7 +47,7 @@ export default function IngredientCostsPage() {
         <input type="number" placeholder="menu id" value={analysisMenuId} onChange={(e) => setAnalysisMenuId(e.target.value)} className="border rounded px-2 py-1" />
         <button onClick={runAnalysis} className="bg-green-600 text-white px-3 py-1 rounded">Run analysis</button>
       </div>
-      {analysis && <pre className="bg-gray-100 p-3 rounded text-xs overflow-auto">{JSON.stringify(analysis, null, 2)}</pre>}
+      {analysis && <FormattedAIReport response={analysis} />}
     </div>
   );
 }

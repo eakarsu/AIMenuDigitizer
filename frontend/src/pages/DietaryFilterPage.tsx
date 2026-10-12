@@ -1,11 +1,21 @@
-import { useState } from 'react';
+import useNativeAIRequest from "../components/useNativeAIRequest";
+import FormattedAIReport from "../components/FormattedAIReport";
+import AIPresetButtons from '../components/AIPresetButtons';
+import { useEffect, useState } from 'react';
 import { aiApi, menuApi } from '../services/api';
 import { Loader2, Filter } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 const DEFAULT_FILTERS = ['vegan', 'vegetarian', 'gluten_free', 'dairy_free', 'nut_free', 'halal', 'kosher'];
+const DIETARY_PRESETS = [
+  { name: 'Plant-based', values: { filters: ['vegan', 'gluten_free'], notes: 'Prioritize complete entrées and clearly separate verified compliance from substitution suggestions.' } },
+  { name: 'Allergy-aware', values: { filters: ['dairy_free', 'nut_free'], notes: 'Flag cross-contact uncertainty and identify dishes that require recipe or kitchen-process confirmation.' } },
+  { name: 'Faith-friendly', values: { filters: ['halal', 'kosher'], notes: 'Separate ingredient compatibility from certification status and list missing supplier evidence.' } },
+];
 
 export default function DietaryFilterPage() {
+  const nativeAIRequest = useNativeAIRequest();
+
   const { addToast } = useToast();
   const [menus, setMenus] = useState<any[]>([]);
   const [selectedMenuId, setSelectedMenuId] = useState<number | null>(null);
@@ -26,6 +36,8 @@ export default function DietaryFilterPage() {
     }
   };
 
+  useEffect(() => { loadMenus(); }, []);
+
   const toggleFilter = (f: string) => {
     setSelectedFilters((cur) => cur.includes(f) ? cur.filter((x) => x !== f) : [...cur, f]);
   };
@@ -35,7 +47,7 @@ export default function DietaryFilterPage() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await aiApi.dietaryFilterRecommendations(selectedMenuId, selectedFilters, notes || undefined);
+      const res = await nativeAIRequest.run((signal) => aiApi.dietaryFilterRecommendations(selectedMenuId, selectedFilters, notes || undefined, { signal }));
       setResult(res.data.analysis);
       addToast('Dietary filter analysis complete!', 'success');
     } catch (err: any) {
@@ -63,11 +75,22 @@ export default function DietaryFilterPage() {
         </p>
       </div>
 
+      <AIPresetButtons
+        presets={DIETARY_PRESETS}
+        disabled={nativeAIRequest.busy || menus.length === 0}
+        description="Each example keeps the current real menu when selected, otherwise chooses an existing menu, and fills all filter and optional-note fields."
+        onSelect={(values, index) => {
+          setSelectedMenuId(selectedMenuId || menus[index % menus.length]?.id || null);
+          setSelectedFilters(values.filters);
+          setNotes(values.notes);
+        }}
+      />
+
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div className="grid gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Select Menu</label>
-            <select
+            <select data-ai-field="selectedMenuId"
               className="input-field"
               value={selectedMenuId || ''}
               onChange={e => setSelectedMenuId(Number(e.target.value))}
@@ -98,7 +121,7 @@ export default function DietaryFilterPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-            <textarea className="input-field" value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
+            <textarea data-ai-field="notes" className="input-field" value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
           </div>
 
           <div>
@@ -110,6 +133,7 @@ export default function DietaryFilterPage() {
               {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Filter className="h-5 w-5" />}
               {loading ? 'Analyzing...' : 'Run Analysis'}
             </button>
+            {nativeAIRequest.busy && <button type="button" onClick={nativeAIRequest.cancel} className="ml-2 border border-red-300 text-red-700 rounded px-3 py-2">Cancel request</button>}
           </div>
         </div>
       </div>
@@ -157,8 +181,8 @@ export default function DietaryFilterPage() {
             </div>
           )}
           <details>
-            <summary className="text-sm text-gray-500 cursor-pointer">Raw JSON</summary>
-            <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+            <summary className="text-sm text-gray-500 cursor-pointer">Complete report</summary>
+            <FormattedAIReport response={result} />
           </details>
         </div>
       )}

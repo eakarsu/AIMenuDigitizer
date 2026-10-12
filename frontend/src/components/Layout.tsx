@@ -1,3 +1,4 @@
+import AIReportLibrary from "./AIReportLibrary";
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -66,7 +67,7 @@ export default function Layout() {
             return <Link key={item.href} to={item.href} className={`codex-side-link${location.pathname === item.href ? ' active' : ''}`}><Icon className="h-4 w-4 inline mr-2" />{item.name}</Link>;
           })}
         </nav>
-      </aside>
+      <AIReportLibrary /></aside>
       {/* Top Navigation */}
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

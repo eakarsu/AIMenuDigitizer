@@ -14,10 +14,10 @@ import {
   Check,
   Save,
   ChevronDown,
-  ChevronUp,
-  Sparkles
+  ChevronUp
 } from 'lucide-react';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import { useToast } from '../context/ToastContext';
 import Pagination from '../components/Pagination';
 import { SkeletonTable } from '../components/Skeleton';
@@ -177,6 +177,12 @@ Limoncello - $7.99
 🌱 V = Vegetarian | VG = Vegan | GF = Gluten-Free
 🌶️ = Spicy
 ═══════════════════════════════════════`;
+
+const MENU_TEXT_PRESETS = [
+  { name: 'Italian dinner', values: SAMPLE_MENU_DATA },
+  { name: 'Plant-based lunch', values: `GREEN TABLE CAFE\n\nSTARTERS\nRoasted Tomato Soup - $7.50\nTomato, basil, oat cream (Vegan, Gluten-Free)\n\nMAINS\nMushroom Grain Bowl - $15.00\nFarro, roasted mushrooms, kale, tahini dressing (Vegan)\nCrispy Tofu Tacos - $14.00\nCorn tortillas, cabbage, avocado salsa (Vegan, Gluten-Free)\n\nDESSERT\nCoconut Panna Cotta - $8.00\nMango and toasted coconut (Vegan, Gluten-Free)\n\nPlease tell staff about allergies.` },
+  { name: 'Coastal brunch', values: `HARBOR BRUNCH\n\nSMALL PLATES\nSmoked Salmon Toast - $13.00\nSourdough, herb cream cheese, capers\nSeasonal Fruit - $8.00\nFresh berries and melon (Vegan, Gluten-Free)\n\nBRUNCH\nCrab Cake Benedict - $21.00\nPoached eggs, crab cakes, hollandaise, breakfast potatoes\nLemon Ricotta Pancakes - $16.00\nBlueberry compote and maple syrup (Vegetarian)\n\nDRINKS\nCold Brew - $5.00\nFresh Orange Juice - $6.00\n\nAllergen information available on request.` },
+];
 
 export default function AIAnalysisPage() {
   const { addToast } = useToast();
@@ -550,6 +556,18 @@ export default function AIAnalysisPage() {
               </select>
             </div>
 
+            <AIPresetButtons
+              presets={MENU_TEXT_PRESETS}
+              disabled={loading || pdfLoading}
+              description="Each example fills the complete menu-text prompt. Your selected save target and uploaded image or PDF remain unchanged."
+              onSelect={(menu, _index) => {
+                setActiveTab('text');
+                setMenuText(menu);
+                setResult(null);
+                setImportSuccess(false);
+              }}
+            />
+
             {/* Tabs */}
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
               <div className="flex border-b border-gray-100">
@@ -596,21 +614,13 @@ export default function AIAnalysisPage() {
                         <label className="block text-sm font-medium text-gray-700">
                           Paste menu text
                         </label>
-                        <button
-                          type="button"
-                          onClick={() => setMenuText(SAMPLE_MENU_DATA)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-                        >
-                          <Sparkles className="h-4 w-4" />
-                          Load Sample Menu
-                        </button>
                       </div>
                       <textarea
                         value={menuText}
                         onChange={(e) => setMenuText(e.target.value)}
                         className="input-field"
                         rows={12}
-                        placeholder={`Paste your menu text here, or click "Load Sample Menu" to try with demo data...`}
+                        placeholder="Paste menu text here, or choose a complete example above..."
                       />
                     </div>
 

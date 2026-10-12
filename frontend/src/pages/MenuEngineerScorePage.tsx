@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { aiApi, menuApi } from '../services/api';
+import AIPresetButtons from '../components/AIPresetButtons';
+import FormattedAIReport from '../components/FormattedAIReport';
 import { BarChart2, Loader2, Star, TrendingDown, TrendingUp, HelpCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -52,6 +54,12 @@ const CLASSIFICATION_CONFIG = {
   },
 };
 
+const ENGINEER_PRESETS = [
+  { name: 'First menu', values: 0 },
+  { name: 'Second menu', values: 1 },
+  { name: 'Third menu', values: 2 },
+];
+
 export default function MenuEngineerScorePage() {
   const { addToast } = useToast();
   const [menus, setMenus] = useState<any[]>([]);
@@ -70,6 +78,8 @@ export default function MenuEngineerScorePage() {
       addToast('Failed to load menus', 'error');
     }
   };
+
+  useEffect(() => { loadMenus(); }, []);
 
   const runAnalysis = async () => {
     if (!selectedMenuId) return;
@@ -100,6 +110,13 @@ export default function MenuEngineerScorePage() {
           Classify menu items as Star, Plowhorse, Puzzle, or Dog based on profitability and popularity.
         </p>
       </div>
+
+      <AIPresetButtons
+        presets={ENGINEER_PRESETS}
+        disabled={loading || menus.length === 0}
+        description="Each example keeps the current real menu when selected, otherwise chooses an existing menu. No menu or item reference is invented."
+        onSelect={(index) => setSelectedMenuId(selectedMenuId || menus[index % menus.length]?.id || null)}
+      />
 
       {/* Controls */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -256,6 +273,10 @@ export default function MenuEngineerScorePage() {
               </ul>
             </div>
           )}
+          <details className="bg-white rounded-xl shadow-sm p-5">
+            <summary className="cursor-pointer text-sm font-medium text-gray-600">Complete structured result</summary>
+            <FormattedAIReport response={result} title="Menu engineer score" />
+          </details>
         </div>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { useRef as useDemoLoginRef, useState as useDemoLoginState } from 'react';
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -6,6 +7,9 @@ import { Menu, Eye, EyeOff, User, Lock } from 'lucide-react';
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter';
 
 export default function Login() {
+  const demoLoginLock = useDemoLoginRef(false);
+  const [demoLoginBusy, setDemoLoginBusy] = useDemoLoginState(false);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,16 +21,16 @@ export default function Login() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, demoLoginCredentials: { email: string; password: string } | undefined = undefined) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      if (isRegister) {
+      if (isRegister && !demoLoginCredentials) {
         await register(email, password, name);
       } else {
-        await login(email, password);
+        await login((demoLoginCredentials?.email ?? email), (demoLoginCredentials?.password ?? password));
       }
       navigate('/');
     } catch (err: any) {
@@ -36,16 +40,6 @@ export default function Login() {
     }
   };
 
-  const fillDemoCredentials = async () => {
-    try {
-      const response = await authApi.getDemoCredentials();
-      setEmail(response.data.email);
-      setPassword(response.data.password);
-    } catch {
-      setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
-      setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-100 flex items-center justify-center p-4">
@@ -151,9 +145,28 @@ export default function Login() {
           {/* Demo Credentials Button */}
           {!isRegister && (
             <div className="mt-4">
-              <button
+              <button disabled={demoLoginBusy}
                 type="button"
-                onClick={async () => { await (fillDemoCredentials)(); window.setTimeout(() => { const form = document.querySelector("form"); if (form) form.requestSubmit(); }, 150); }}
+                onClick={async (event) => {
+ if (demoLoginLock.current) return;
+ demoLoginLock.current = true; setDemoLoginBusy(true);
+ const values: {email?: string; password?: string; error?: unknown} = {};
+ const captureDemoValue = (key: "email" | "password" | "error", value: any) => { values[key] = value; return value; };
+ try {
+  await (async () => {
+    try {
+      const response = await authApi.getDemoCredentials();
+      setEmail(captureDemoValue("email", response.data.email));
+      setPassword(captureDemoValue("password", response.data.password));
+    } catch {
+      setEmail(captureDemoValue("email", import.meta.env.VITE_DEMO_EMAIL || ''));
+      setPassword(captureDemoValue("password", import.meta.env.VITE_DEMO_PASSWORD || ''));
+    }
+  })();
+  if (values.error || typeof values.email !== 'string' || !values.email || typeof values.password !== 'string' || !values.password) { setError(typeof values.error === 'string' ? values.error : 'Demo credentials are unavailable.'); return; }
+  await handleSubmit(event, { email: values.email, password: values.password });
+ } finally { demoLoginLock.current = false; setDemoLoginBusy(false); }
+}}
                 className="w-full btn-secondary py-3 text-sm"
               >
                 Log In as Demo

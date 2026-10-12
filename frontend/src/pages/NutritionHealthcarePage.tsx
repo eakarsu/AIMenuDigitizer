@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { menuApi, aiApi } from '../services/api';
 import AIResultDisplay from '../components/AIResultDisplay';
+import AIPresetButtons from '../components/AIPresetButtons';
 import {
   Heart,
   Loader2,
   ChevronDown,
   Stethoscope,
   Activity,
-  AlertCircle,
-  Sparkles
+  AlertCircle
 } from 'lucide-react';
 
 interface Menu {
@@ -25,6 +25,12 @@ interface MenuItem {
   price: number;
   category: string;
 }
+
+const HEALTH_PRESETS = [
+  { name: 'Metabolic review', values: 'Diabetes, High Blood Pressure, High Cholesterol' },
+  { name: 'Digestive review', values: 'Celiac Disease, IBS' },
+  { name: 'Renal review', values: 'Kidney Disease, High Blood Pressure, Gout' },
+];
 
 export default function NutritionHealthcarePage() {
   const [menus, setMenus] = useState<Menu[]>([]);
@@ -251,20 +257,16 @@ export default function NutritionHealthcarePage() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedMenu?.items && selectedMenu.items.length > 0) {
-              setSelectedItem(selectedMenu.items[0]);
-            }
-            setHealthConditions('Diabetes, High Blood Pressure, High Cholesterol');
+        <AIPresetButtons
+          presets={HEALTH_PRESETS}
+          disabled={analyzing || !selectedMenu?.items?.length}
+          description="Each example selects a real item from the current menu and fills all optional health-condition context."
+          onSelect={(conditions, index) => {
+            const menuItems = selectedMenu?.items || [];
+            setSelectedItem(menuItems[index % menuItems.length] || null);
+            setHealthConditions(conditions);
           }}
-          disabled={!selectedMenu?.items?.length}
-          className="w-full mt-6 inline-flex items-center justify-center gap-1 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-sm"
-        >
-          <Sparkles className="h-4 w-4" />
-          Load Sample Data
-        </button>
+        />
 
         <button
           onClick={handleAnalyze}

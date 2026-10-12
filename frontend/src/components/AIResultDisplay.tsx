@@ -31,6 +31,7 @@ import {
   HeartPulse,
   Scale
 } from 'lucide-react';
+import FormattedAIReport from './FormattedAIReport';
 
 interface AIResultDisplayProps {
   title: string;
@@ -1337,6 +1338,11 @@ export default function AIResultDisplay({ title, result, type }: AIResultDisplay
       {type === 'price' && renderPrice()}
       {type === 'recommendation' && renderRecommendation()}
       {type === 'healthcare' && renderHealthcare()}
+
+      <details className="mt-6 border-t border-gray-200 pt-4">
+        <summary className="cursor-pointer text-sm font-medium text-gray-600">Complete structured result</summary>
+        <FormattedAIReport response={analysis} title={`${title} · Complete result`} />
+      </details>
     </div>
   );
 }

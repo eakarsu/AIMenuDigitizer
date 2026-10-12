@@ -134,11 +134,11 @@ export const aiApi = {
     api.post('/api/ai/nutrition-healthcare', { itemName, description, healthConditions, menuItemId }),
   getHistory: (type?: string) => api.get('/api/ai/history', { params: { type } }),
   menuEngineerScore: (menuId: number) => api.post(`/api/ai/menu-engineer-score/${menuId}`),
-  dietaryFilterRecommendations: (menuId: number, filters: string[], notes?: string) =>
-    api.post('/api/ai/dietary-filter-recommendations', { menuId, filters, notes }),
-  menuSeasonalRotation: (menuId: number, season: string, region?: string) =>
-    api.post('/api/ai/menu-seasonal-rotation', { menuId, season, region }),
-  costAnalysis: (menuId: number) => api.post('/api/ai/cost-analysis', { menuId }),
+  dietaryFilterRecommendations: (menuId: number, filters: string[], notes?: string, nativeRequestOptions: { signal?: AbortSignal } = {}) =>
+    api.post('/api/ai/dietary-filter-recommendations', { menuId, filters, notes }, nativeRequestOptions),
+  menuSeasonalRotation: (menuId: number, season: string, region?: string, nativeRequestOptions: { signal?: AbortSignal } = {}) =>
+    api.post('/api/ai/menu-seasonal-rotation', { menuId, season, region }, nativeRequestOptions),
+  costAnalysis: (menuId: number, nativeRequestOptions: { signal?: AbortSignal } = {}) => api.post('/api/ai/cost-analysis', { menuId }, nativeRequestOptions),
   getJobStatus: (jobId: string) => api.get(`/api/ai/jobs/${jobId}`),
 };
 

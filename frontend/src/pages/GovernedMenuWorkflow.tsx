@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../services/api';
+import AIPresetButtons from '../components/AIPresetButtons';
+import FormattedAIReport from '../components/FormattedAIReport';
 
 type Ingestion = { ingestion_ref: string; source_type: string; object_ref: string; ocr_confidence: number; layout_kind?: string; correction_required: boolean; created_at: string };
 type MenuVersion = { menu_ref: string; version: number; restaurant_ref: string; location_ref: string; channel: string; currency: string; status: string; source_ingestion_ref: string; normalized_menu?: unknown };
@@ -8,6 +10,11 @@ const emptyEvidence: Evidence = { labels: [], translations: [], audit: [], publi
 const errorText = (error: any) => error.response?.data?.error || error.message || 'Request failed';
 const blankSource = { ingestion_ref: '', source_type: 'image', source_checksum: '', object_ref: '', page_count: 1, deskew_angle: 0, ocr_confidence: 0, handwriting: false };
 const blankVersion = { menu_ref: '', version: 1, restaurant_ref: '', location_ref: '', channel: 'web', currency: 'USD', source_ingestion_ref: '' };
+const STRUCTURE_PRESETS = [
+  { name: 'Cafe lunch', values: 'RIVER CAFE\nStarters\nTomato Soup 7.50\nMains\nGrilled Chicken Sandwich 15.00\nRoasted Vegetable Bowl 14.00\nDesserts\nApple Tart 8.00' },
+  { name: 'Italian dinner', values: 'TRATTORIA VERDE\nAntipasti\nBruschetta 9.00\nPasta\nSpaghetti Carbonara 19.00\nPenne Arrabbiata 17.00\nDolci\nTiramisu 10.00' },
+  { name: 'Coastal brunch', values: 'HARBOR BRUNCH\nSmall Plates\nSeasonal Fruit 8.00\nBrunch\nCrab Cake Benedict 21.00\nLemon Ricotta Pancakes 16.00\nDrinks\nCold Brew 5.00' },
+];
 
 function candidateToMenu(analysis: any, currency: string) {
   const groups = new Map<string, any[]>();
@@ -37,6 +44,7 @@ export default function GovernedMenuWorkflow() {
   const [menuJson, setMenuJson] = useState(JSON.stringify({ currency: 'USD', sections: [] }, null, 2));
   const [availabilityJson, setAvailabilityJson] = useState('{}');
   const [sourceText, setSourceText] = useState('');
+  const [aiCandidate, setAiCandidate] = useState<any>(null);
   const [reason, setReason] = useState('');
   const [labelForm, setLabelForm] = useState({ item_ref: '', label_type: 'allergen', label_name: '', evidence_ref: '', evidence_version: '', evidence_checksum: '' });
   const [translationForm, setTranslationForm] = useState({ locale: '', terminology_version: '', translated_menu: '{}', protected_names: '', round_trip_score: '' as number | string });
@@ -132,6 +140,7 @@ export default function GovernedMenuWorkflow() {
       const response = await post('/api/ai/analyze-text', { menuText: sourceText });
       const candidate = candidateToMenu(response.data.analysis, version.currency);
       setMenuJson(JSON.stringify(candidate, null, 2));
+      setAiCandidate(candidate);
       setNotice('AI structure is a candidate. Check every name and price against the scan. Dietary or allergen claims were excluded because they need separate evidence.');
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
@@ -271,8 +280,15 @@ export default function GovernedMenuWorkflow() {
           <div className="grid grid-cols-2 gap-2"><label>Menu reference<input className="w-full border rounded p-2" required value={version.menu_ref} onChange={e => setVersion({ ...version, menu_ref: e.target.value })} /></label><label>Version<input className="w-full border rounded p-2" type="number" min="1" required value={version.version} onChange={e => setVersion({ ...version, version: Number(e.target.value) })} /></label></div>
           <div className="grid grid-cols-2 gap-2"><label>Restaurant reference<input className="w-full border rounded p-2" required value={version.restaurant_ref} onChange={e => setVersion({ ...version, restaurant_ref: e.target.value })} /></label><label>Location reference<input className="w-full border rounded p-2" required value={version.location_ref} onChange={e => setVersion({ ...version, location_ref: e.target.value })} /></label></div>
           <div className="grid grid-cols-3 gap-2"><label>Channel<input className="w-full border rounded p-2" required value={version.channel} onChange={e => setVersion({ ...version, channel: e.target.value })} /></label><label>Currency<input className="w-full border rounded p-2" required pattern="[A-Z]{3}" value={version.currency} onChange={e => setVersion({ ...version, currency: e.target.value.toUpperCase() })} /></label><label>Source<select className="w-full border rounded p-2" required value={version.source_ingestion_ref} onChange={e => setVersion({ ...version, source_ingestion_ref: e.target.value })}><option value="">Select source</option>{ingestions.map(item => <option key={item.ingestion_ref}>{item.ingestion_ref}</option>)}</select></label></div>
-          <label className="block">Rights-cleared scan text<textarea className="w-full border rounded p-2" rows={4} value={sourceText} onChange={e => setSourceText(e.target.value)} /></label>
+          <AIPresetButtons
+            presets={STRUCTURE_PRESETS}
+            disabled={busy}
+            description="Each example fills the complete rights-cleared scan-text prompt. Existing source references, uploads, corrected JSON, and approval state are preserved."
+            onSelect={(value) => { setSourceText(value); setAiCandidate(null); }}
+          />
+          <label className="block">Rights-cleared scan text<textarea className="w-full border rounded p-2" rows={4} value={sourceText} onChange={e => { setSourceText(e.target.value); setAiCandidate(null); }} /></label>
           <button type="button" className="bg-indigo-100 text-indigo-900 rounded px-3 py-2" disabled={busy} onClick={suggestStructure}>Suggest AI structure</button>
+          {aiCandidate && <FormattedAIReport response={aiCandidate} title="AI structure candidate" />}
           <label className="block">Corrected menu JSON<textarea className="w-full border rounded p-2 font-mono text-sm" rows={14} required value={menuJson} onChange={e => setMenuJson(e.target.value)} /></label>
           <label className="block">Location availability by item ID (JSON booleans)<textarea className="w-full border rounded p-2 font-mono text-sm" rows={3} required value={availabilityJson} onChange={e => setAvailabilityJson(e.target.value)} placeholder={'{"item-1":true,"item-2":false}'} /></label>
           <p className="text-sm text-gray-600">Use sections with items containing unique id, name, and price. Check every price manually; the AI candidate excludes safety labels.</p>
@@ -281,7 +297,7 @@ export default function GovernedMenuWorkflow() {
       </section>
     </div>
     <section className="bg-white rounded-lg border p-4"><h2 className="font-semibold text-lg">Menu versions</h2><div className="flex flex-wrap gap-2 mt-2">{versions.map(item => <button key={`${item.menu_ref}:${item.version}`} className="border rounded px-3 py-2" onClick={() => select(item)}>{item.menu_ref} v{item.version} · {item.status}</button>)}</div>{!versions.length && <p>No governed menu versions yet.</p>}</section>
-    {selected && <section className="bg-white rounded-lg border p-4 space-y-3"><h2 className="font-semibold text-lg">{selected.menu_ref} v{selected.version}</h2><p>Status: {selected.status} · Source: {selected.source_ingestion_ref}</p><pre className="overflow-auto bg-gray-50 p-3 text-xs">{JSON.stringify(selected.normalized_menu, null, 2)}</pre><h3 className="font-semibold">Evidence and publication</h3>
+    {selected && <section className="bg-white rounded-lg border p-4 space-y-3"><h2 className="font-semibold text-lg">{selected.menu_ref} v{selected.version}</h2><p>Status: {selected.status} · Source: {selected.source_ingestion_ref}</p><FormattedAIReport response={selected.normalized_menu} title="Saved normalized menu" /><h3 className="font-semibold">Evidence and publication</h3>
       <form onSubmit={saveLabel} className="grid md:grid-cols-2 gap-2 border rounded p-3">
         <h4 className="md:col-span-2 font-semibold">Source-backed label</h4>
         <label>Item reference<input className="w-full border rounded p-2" required value={labelForm.item_ref} onChange={e => setLabelForm({ ...labelForm, item_ref: e.target.value })} /></label>
